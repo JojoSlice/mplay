@@ -1,0 +1,53 @@
+# Build outputs
+bin/
+obj/
+
+# User-specific files
+*.user
+*.suo
+.vs/
+*.rsuser
+
+# Rider / JetBrains
+.idea/
+*.sln.iml
+
+# VS Code
+.vscode/
+
+# MonoGame Content Pipeline
+*.mgcb.lock
+Content/bin/
+Content/obj/
+
+# NuGet
+*.nupkg
+**/packages/
+project.assets.json
+project.nuget.cache
+*.nuget.props
+*.nuget.targets
+
+# .NET runtime
+*.dll
+*.pdb
+*.exe
+
+# dotnet publish
+publish/
+
+# dotnet user secrets
+secrets.json
+
+# Environment / secrets
+.env
+*.env.local
+appsettings.Development.json
+
+# Docker volumes
+pgdata/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

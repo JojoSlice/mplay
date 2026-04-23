@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Multiplay.Client/Multiplay.Client.csproj" />
+    <Project Path="src/Multiplay.Server/Multiplay.Server.csproj" />
+    <Project Path="src/Multiplay.Shared/Multiplay.Shared.csproj" />
+  </Folder>
+</Solution>
