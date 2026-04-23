@@ -9,7 +9,7 @@ namespace Multiplay.Client.Screens;
 
 public sealed class RegisterScreen : Screen
 {
-    private readonly AuthService _auth;
+    private readonly IAuthService _auth;
     private SpriteFont _font  = null!;
     private Texture2D  _pixel = null!;
 
@@ -24,7 +24,7 @@ public sealed class RegisterScreen : Screen
     private volatile string? _pendingResult;
     private KeyboardState _prevKb;
 
-    public RegisterScreen(AuthService auth) => _auth = auth;
+    public RegisterScreen(IAuthService auth) => _auth = auth;
 
     public override void LoadContent(ContentManager content, GraphicsDevice gd)
     {

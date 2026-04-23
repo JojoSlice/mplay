@@ -65,7 +65,7 @@ public sealed class TextInput
         // Text / placeholder
         var display = Text.Length == 0
             ? Placeholder
-            : (IsPassword ? new string('•', Text.Length) : Text);
+            : (IsPassword ? new string('*', Text.Length) : Text);
 
         var color = Text.Length == 0 ? PlaceholderColor : TextColor;
         var textPos = new Vector2(Bounds.X + 8, Bounds.Y + (Bounds.Height - font.LineSpacing) / 2f);
@@ -75,7 +75,7 @@ public sealed class TextInput
         // Cursor
         if (IsFocused && _cursorBlink < 0.5f)
         {
-            var measured = font.MeasureString(IsPassword ? new string('•', Text.Length) : Text);
+            var measured = font.MeasureString(IsPassword ? new string('*', Text.Length) : Text);
             var cx = (int)(textPos.X + measured.X + 1);
             var cy = (int)textPos.Y;
             sb.Draw(_pixel, new Rectangle(cx, cy, 1, font.LineSpacing), TextColor);

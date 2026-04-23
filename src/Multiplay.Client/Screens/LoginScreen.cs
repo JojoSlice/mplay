@@ -9,7 +9,7 @@ namespace Multiplay.Client.Screens;
 
 public sealed class LoginScreen : Screen
 {
-    private readonly AuthService _auth;
+    private readonly IAuthService _auth;
     private SpriteFont _font  = null!;
     private Texture2D  _pixel = null!;
 
@@ -26,7 +26,7 @@ public sealed class LoginScreen : Screen
 
     private KeyboardState _prevKb;
 
-    public LoginScreen(AuthService auth) => _auth = auth;
+    public LoginScreen(IAuthService auth) => _auth = auth;
 
     public override void LoadContent(ContentManager content, GraphicsDevice gd)
     {

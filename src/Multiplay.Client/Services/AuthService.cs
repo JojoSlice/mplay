@@ -2,7 +2,7 @@ using System.Net.Http.Json;
 
 namespace Multiplay.Client.Services;
 
-public sealed class AuthService : IDisposable
+public sealed class AuthService : IAuthService
 {
     private readonly HttpClient _http;
 
@@ -12,8 +12,8 @@ public sealed class AuthService : IDisposable
     public string? DisplayName   { get; private set; }
     public string? CharacterType { get; private set; }
 
-    public bool IsLoggedIn    => Token       is not null;
-    public bool IsSetupDone   => DisplayName is not null;
+    public bool IsLoggedIn  => Token       is not null;
+    public bool IsSetupDone => DisplayName is not null;
 
     public AuthService(string serverBaseUrl)
     {

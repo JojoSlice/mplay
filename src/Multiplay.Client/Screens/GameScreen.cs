@@ -16,11 +16,11 @@ public sealed class GameScreen : Screen
     private const int    ServerPort = 9050;
     private const float  Speed      = 200f;
 
-    private readonly AuthService _auth;
+    private readonly IAuthService    _auth;
+    private readonly INetworkManager _network;
 
     private SpriteBatch _spriteBatch = null!;
 
-    private readonly NetworkManager _network = new();
     private readonly Dictionary<int, PlayerInfo>        _remotePlayers   = [];
     private readonly Dictionary<int, CharacterAnimator> _remoteAnimators = [];
     private Vector2 _localPos = new(400, 300);
@@ -31,12 +31,20 @@ public sealed class GameScreen : Screen
     private TileMapRenderer? _map;
     private static readonly string MapPath = "";
 
-    public GameScreen(AuthService auth) => _auth = auth;
+    public GameScreen(IAuthService auth) : this(auth, new NetworkManager()) { }
+
+    // Secondary constructor for testing — inject a mock network manager
+    public GameScreen(IAuthService auth, INetworkManager network)
+    {
+        _auth    = auth;
+        _network = network;
+    }
 
     public override void LoadContent(ContentManager content, GraphicsDevice gd)
     {
         _spriteBatch   = new SpriteBatch(gd);
-        _localAnimator = CharacterAnimator.Create(_auth.CharacterType ?? Shared.CharacterType.Zink);
+        _localAnimator = CharacterAnimator.Create(
+            _auth.CharacterType ?? Shared.CharacterType.Zink);
         _localAnimator.LoadContent(content);
 
         if (MapPath != string.Empty)
@@ -59,7 +67,7 @@ public sealed class GameScreen : Screen
             {
                 if (p.Id == localId) { _localPos = new Vector2(p.X, p.Y); continue; }
                 _remotePlayers[p.Id]   = p;
-                _remoteAnimators[p.Id] = CreateRemoteAnimator(content, p.CharacterType);
+                _remoteAnimators[p.Id] = CreateAnimator(content, p.CharacterType);
             }
         };
 
@@ -67,7 +75,7 @@ public sealed class GameScreen : Screen
         {
             if (p.Id == _network.LocalId) return;
             _remotePlayers[p.Id]   = p;
-            _remoteAnimators[p.Id] = CreateRemoteAnimator(content, p.CharacterType);
+            _remoteAnimators[p.Id] = CreateAnimator(content, p.CharacterType);
         };
 
         _network.PlayerMoved += (id, x, y) =>
@@ -142,7 +150,7 @@ public sealed class GameScreen : Screen
         _spriteBatch.End();
     }
 
-    private static CharacterAnimator CreateRemoteAnimator(ContentManager content, string characterType)
+    private static CharacterAnimator CreateAnimator(ContentManager content, string characterType)
     {
         var a = CharacterAnimator.Create(characterType);
         a.LoadContent(content);

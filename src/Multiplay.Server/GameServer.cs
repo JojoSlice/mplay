@@ -3,41 +3,43 @@ using System.Net.Sockets;
 using LiteNetLib;
 using LiteNetLib.Utils;
 using Multiplay.Server.Data;
+using Multiplay.Server.Infrastructure.Auth;
+using Multiplay.Server.Infrastructure.GameState;
+using Multiplay.Server.Infrastructure.Network;
 using Multiplay.Server.Models;
 using Multiplay.Shared;
 
 namespace Multiplay.Server;
 
 /// <summary>
-/// UDP game server running as an ASP.NET Core hosted service.
-/// Position updates are kept in-memory; join/disconnect events are persisted to the DB.
+/// Thin UDP host: owns the LiteNetLib socket, delegates all game logic to
+/// <see cref="GameLogic"/> and all persistence to fire-and-forget helpers.
 /// </summary>
 public sealed class GameServer : IHostedService, INetEventListener
 {
-    private const byte DefaultChannel = 0;
-
-    private readonly NetManager _net;
+    private readonly NetManager         _net;
+    private readonly GameLogic          _logic;
+    private readonly ISessionStore      _sessions;
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly IConfiguration _config;
+    private readonly IConfiguration     _config;
     private readonly ILogger<GameServer> _logger;
 
-    // In-memory game state — only touched from the poll loop thread
-    private readonly Dictionary<int, PlayerInfo> _players = [];
-    // Reusable buffer for GetConnectedPeers to avoid per-broadcast allocations
-    private readonly List<NetPeer> _peerBuffer = [];
-
     private CancellationTokenSource? _cts;
-    private Task? _pollTask;
+    private Task?                     _pollTask;
 
     public GameServer(
+        IGameState state,
+        ISessionStore sessions,
         IServiceScopeFactory scopeFactory,
         IConfiguration config,
         ILogger<GameServer> logger)
     {
+        _sessions     = sessions;
         _scopeFactory = scopeFactory;
         _config       = config;
         _logger       = logger;
         _net          = new NetManager(this) { AutoRecycle = true };
+        _logic        = new GameLogic(state, new LiteNetBroadcaster(_net));
     }
 
     // ── IHostedService ──────────────────────────────────────────────────────────
@@ -80,122 +82,49 @@ public sealed class GameServer : IHostedService, INetEventListener
     {
         var token = request.Data.GetString();
 
-        using var scope = _scopeFactory.CreateScope();
-        var db   = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var user = db.Users.FirstOrDefault(u => u.SessionToken == token);
-
-        if (user is null)
+        if (!_sessions.TryGet(token, out var info) || info is null)
         {
-            _logger.LogWarning("Rejected connection: invalid token");
+            _logger.LogWarning("Rejected connection: unknown or expired token");
             request.Reject();
             return;
         }
 
-        // Store user info on the peer so OnPeerConnected can read it
         var peer = request.Accept();
-        peer.Tag = (user.DisplayName ?? user.Username, user.CharacterType ?? Shared.CharacterType.Zink);
+        peer.Tag = new PeerIdentity(
+            info.DisplayName ?? info.Username,
+            info.CharacterType ?? CharacterType.Zink);
     }
 
     public void OnPeerConnected(NetPeer peer)
     {
-        var (displayName, characterType) = peer.Tag is (string n, string c)
-            ? (n, c)
-            : ($"Player_{peer.Id}", Shared.CharacterType.Zink);
-        var player = new PlayerInfo(peer.Id, displayName, 400f, 300f, characterType);
-        _players[peer.Id] = player;
-        _logger.LogInformation("Player {Id} connected ({Total} online)", peer.Id, _players.Count);
+        var id = peer.Tag as PeerIdentity
+            ?? new PeerIdentity($"Player_{peer.Id}", CharacterType.Zink);
 
-        _ = PersistConnectAsync(player);
+        _logic.OnPlayerConnected(peer.Id, id.DisplayName, id.CharacterType);
+        _logger.LogInformation("Player {Id} ({Name}) connected", peer.Id, id.DisplayName);
 
-        // Send world snapshot (includes local player ID as first field)
-        var snap = new NetDataWriter();
-        snap.Put((byte)PacketType.WorldSnapshot);
-        snap.Put(peer.Id);
-        snap.Put(_players.Count);
-        foreach (var p in _players.Values)
-            snap.WritePlayerInfo(p);
-        peer.Send(snap, DefaultChannel, DeliveryMethod.ReliableOrdered);
-
-        // Notify all other peers
-        var join = new NetDataWriter();
-        join.Put((byte)PacketType.PlayerJoined);
-        join.WritePlayerInfo(player);
-        Broadcast(join, DeliveryMethod.ReliableOrdered, except: peer.Id);
+        _ = PersistConnectAsync(peer.Id, id.DisplayName);
     }
 
     public void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
     {
-        if (!_players.Remove(peer.Id, out var finalState)) return;
-        _logger.LogInformation("Player {Id} disconnected ({Total} online)", peer.Id, _players.Count);
-
-        _ = PersistDisconnectAsync(peer.Id, finalState);
-
-        var left = new NetDataWriter();
-        left.Put((byte)PacketType.PlayerLeft);
-        left.Put(peer.Id);
-        Broadcast(left, DeliveryMethod.ReliableOrdered);
+        var final = _logic.OnPlayerDisconnected(peer.Id);
+        if (final is null) return;
+        _logger.LogInformation("Player {Id} disconnected", peer.Id);
+        _ = PersistDisconnectAsync(peer.Id, final.Value);
     }
 
-    public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channel, DeliveryMethod delivery)
+    public void OnNetworkReceive(
+        NetPeer peer, NetPacketReader reader, byte channel, DeliveryMethod delivery)
     {
         var type = (PacketType)reader.GetByte();
-        switch (type)
-        {
-            case PacketType.Move:
-                HandleMove(peer, reader);
-                break;
-
-            case PacketType.SetName:
-                HandleSetName(peer, reader);
-                break;
-        }
+        if (type == PacketType.Move)
+            _logic.OnMove(peer.Id, reader.GetFloat(), reader.GetFloat());
     }
 
-    private void HandleMove(NetPeer peer, NetPacketReader reader)
-    {
-        if (!_players.TryGetValue(peer.Id, out var cur)) return;
+    // ── Persistence (fire-and-forget, non-critical) ─────────────────────────────
 
-        float x = reader.GetFloat();
-        float y = reader.GetFloat();
-        _players[peer.Id] = cur with { X = x, Y = y };
-
-        var w = new NetDataWriter();
-        w.Put((byte)PacketType.PlayerMoved);
-        w.Put(peer.Id);
-        w.Put(x);
-        w.Put(y);
-        // Unreliable: dropping an occasional position update is fine
-        Broadcast(w, DeliveryMethod.Unreliable, except: peer.Id);
-    }
-
-    private void HandleSetName(NetPeer peer, NetPacketReader reader)
-    {
-        if (!_players.TryGetValue(peer.Id, out var cur)) return;
-
-        var name = reader.GetString(64)?.Trim();
-        if (string.IsNullOrEmpty(name)) return;
-
-        var updated = cur with { Name = name };
-        _players[peer.Id] = updated;
-
-        var w = new NetDataWriter();
-        w.Put((byte)PacketType.PlayerJoined); // reuse to broadcast updated info
-        w.WritePlayerInfo(updated);
-        Broadcast(w, DeliveryMethod.ReliableOrdered);
-    }
-
-    private void Broadcast(NetDataWriter writer, DeliveryMethod delivery, int except = -1)
-    {
-        _peerBuffer.Clear();
-        _net.GetConnectedPeers(_peerBuffer);
-        foreach (var peer in _peerBuffer)
-            if (peer.Id != except)
-                peer.Send(writer, DefaultChannel, delivery);
-    }
-
-    // ── Persistence (fire-and-forget, non-critical path) ─────────────────────
-
-    private async Task PersistConnectAsync(PlayerInfo player)
+    private async Task PersistConnectAsync(int peerId, string displayName)
     {
         try
         {
@@ -203,36 +132,36 @@ public sealed class GameServer : IHostedService, INetEventListener
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             db.Players.Add(new Player
             {
-                Id       = player.Id,
-                Name     = player.Name,
-                X        = player.X,
-                Y        = player.Y,
+                Id       = peerId,
+                Name     = displayName,
+                X        = 400f,
+                Y        = 300f,
                 LastSeen = DateTime.UtcNow,
             });
             await db.SaveChangesAsync();
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to persist player {Id} on connect", player.Id);
+            _logger.LogWarning(ex, "Failed to persist player {Id} on connect", peerId);
         }
     }
 
-    private async Task PersistDisconnectAsync(int playerId, PlayerInfo finalState)
+    private async Task PersistDisconnectAsync(int peerId, PlayerInfo final)
     {
         try
         {
             await using var scope = _scopeFactory.CreateAsyncScope();
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var entity = await db.Players.FindAsync(playerId);
+            var db     = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var entity = await db.Players.FindAsync(peerId);
             if (entity is null) return;
-            entity.X        = finalState.X;
-            entity.Y        = finalState.Y;
+            entity.X        = final.X;
+            entity.Y        = final.Y;
             entity.LastSeen = DateTime.UtcNow;
             await db.SaveChangesAsync();
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to persist player {Id} on disconnect", playerId);
+            _logger.LogWarning(ex, "Failed to persist player {Id} on disconnect", peerId);
         }
     }
 
@@ -248,4 +177,6 @@ public sealed class GameServer : IHostedService, INetEventListener
     public void OnMessageDelivered(NetPeer peer, object userData) { }
     public void OnNtpResponse(LiteNetLib.Utils.NtpPacket packet) { }
     public void OnPeerAddressChanged(NetPeer peer, IPEndPoint previousAddress) { }
+
+    private sealed record PeerIdentity(string DisplayName, string CharacterType);
 }

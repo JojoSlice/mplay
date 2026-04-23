@@ -8,13 +8,13 @@ namespace Multiplay.Client.Screens;
 
 public sealed class StartScreen : Screen
 {
-    private readonly AuthService _auth;
+    private readonly IAuthService _auth;
     private SpriteFont _font = null!;
     private Texture2D  _pixel = null!;
     private Button     _loginBtn = null!;
     private Button     _registerBtn = null!;
 
-    public StartScreen(AuthService auth) => _auth = auth;
+    public StartScreen(IAuthService auth) => _auth = auth;
 
     public override void LoadContent(ContentManager content, GraphicsDevice gd)
     {

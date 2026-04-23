@@ -13,7 +13,7 @@ public class Game1 : Game
     private readonly GraphicsDeviceManager _graphics;
     private SpriteBatch _spriteBatch = null!;
 
-    private readonly AuthService _auth;
+    private readonly IAuthService _auth;
     private ScreenManager _screens = null!;
 
     public Game1()
