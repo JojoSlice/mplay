@@ -7,8 +7,9 @@ public enum PacketType : byte
     PlayerJoined  = 1,
     PlayerLeft    = 2,
     PlayerMoved   = 3,
-    EnemySnapshot = 4,
-    EnemyMoved    = 5,
+    EnemySnapshot  = 4,
+    EnemyMoved     = 5,
+    PlayerDamaged  = 6,
     // Client → Server
     Move = 10,
 }

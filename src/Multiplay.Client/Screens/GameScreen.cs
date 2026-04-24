@@ -23,6 +23,8 @@ public sealed class GameScreen : Screen
 
     private readonly Dictionary<int, PlayerInfo>        _remotePlayers   = [];
     private readonly Dictionary<int, CharacterAnimator> _remoteAnimators = [];
+    private readonly Dictionary<int, float>             _remoteIdleTimers = [];
+    private const float IdleThreshold = 0.15f;
     private Vector2 _localPos = new(400, 300);
 
     private readonly Dictionary<int, EnemyInfo> _enemies    = [];
@@ -91,19 +93,22 @@ public sealed class GameScreen : Screen
         {
             _remotePlayers.Clear();
             _remoteAnimators.Clear();
+            _remoteIdleTimers.Clear();
             foreach (var p in players)
             {
                 if (p.Id == localId) { _localPos = new Vector2(p.X, p.Y); continue; }
-                _remotePlayers[p.Id]   = p;
-                _remoteAnimators[p.Id] = CreateAnimator(content, p.CharacterType);
+                _remotePlayers[p.Id]    = p;
+                _remoteAnimators[p.Id]  = CreateAnimator(content, p.CharacterType);
+                _remoteIdleTimers[p.Id] = 0f;
             }
         };
 
         _network.PlayerJoined += p =>
         {
             if (p.Id == _network.LocalId) return;
-            _remotePlayers[p.Id]   = p;
-            _remoteAnimators[p.Id] = CreateAnimator(content, p.CharacterType);
+            _remotePlayers[p.Id]    = p;
+            _remoteAnimators[p.Id]  = CreateAnimator(content, p.CharacterType);
+            _remoteIdleTimers[p.Id] = 0f;
         };
 
         _network.PlayerMoved += (id, x, y) =>
@@ -117,6 +122,7 @@ public sealed class GameScreen : Screen
 
             if (!_remotePlayers.TryGetValue(id, out var cur)) return;
             _remotePlayers[id] = cur with { X = x, Y = y };
+            _remoteIdleTimers[id] = 0f;
             if (_remoteAnimators.TryGetValue(id, out var anim))
             {
                 anim.SetDirection(InferDirection(x - cur.X, y - cur.Y));
@@ -128,6 +134,7 @@ public sealed class GameScreen : Screen
         {
             _remotePlayers.Remove(id);
             _remoteAnimators.Remove(id);
+            _remoteIdleTimers.Remove(id);
         };
 
         _network.EnemySnapshotReceived += enemies =>
@@ -161,7 +168,15 @@ public sealed class GameScreen : Screen
         HandleMovement(dt);
 
         _localAnimator.Update(dt);
+
+        foreach (var id in _remoteIdleTimers.Keys.ToArray())
+        {
+            _remoteIdleTimers[id] += dt;
+            if (_remoteIdleTimers[id] >= IdleThreshold && _remoteAnimators.TryGetValue(id, out var a))
+                a.SetAction(PlayerAction.Idle);
+        }
         foreach (var a in _remoteAnimators.Values) a.Update(dt);
+
         foreach (var (anim, _, _) in _dummyChars) anim.Update(dt);
         _slimeSprite?.Update(dt);
 
@@ -211,7 +226,7 @@ public sealed class GameScreen : Screen
         }
         else
         {
-            _localAnimator.SetAction(PlayerAction.Walk);
+            _localAnimator.SetAction(PlayerAction.Idle);
         }
     }
 

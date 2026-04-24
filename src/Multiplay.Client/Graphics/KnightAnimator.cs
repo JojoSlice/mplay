@@ -17,6 +17,7 @@ public sealed class KnightAnimator : CharacterAnimator
     private readonly string _spriteName; // "ShieldKnight" or "SwordKnight"
     private readonly Dictionary<Direction, AnimatedSprite> _sprites = [];
     private AnimatedSprite? _active;
+    private bool _isIdle;
 
     public Direction CurrentDirection { get; private set; } = Direction.S;
 
@@ -46,10 +47,16 @@ public sealed class KnightAnimator : CharacterAnimator
         }
     }
 
-    // Knights only walk — ignore other actions
-    public override void SetAction(PlayerAction action) { }
+    public override void SetAction(PlayerAction action)
+    {
+        _isIdle = action == PlayerAction.Idle;
+        if (_isIdle) _active?.Reset();
+    }
 
-    public override void Update(float deltaSeconds) => _active?.Update(deltaSeconds);
+    public override void Update(float deltaSeconds)
+    {
+        if (!_isIdle) _active?.Update(deltaSeconds);
+    }
 
     public override void Draw(SpriteBatch sb, Vector2 position, Color color, float scale = 1f)
         => _active?.Draw(sb, position, color, scale);

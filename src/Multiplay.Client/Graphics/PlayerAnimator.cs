@@ -16,6 +16,7 @@ public sealed class ZinkAnimator : CharacterAnimator
     private readonly Dictionary<(PlayerAction, Direction), AnimatedSprite> _sprites = [];
     private (PlayerAction action, Direction dir) _current = (PlayerAction.Walk, Direction.S);
     private AnimatedSprite? _active;
+    private bool _isIdle;
 
     public Direction    CurrentDirection { get; private set; } = Direction.S;
     public PlayerAction CurrentAction    { get; private set; } = PlayerAction.Walk;
@@ -57,6 +58,18 @@ public sealed class ZinkAnimator : CharacterAnimator
 
     public override void SetAction(PlayerAction action)
     {
+        if (action == PlayerAction.Idle)
+        {
+            if (_isIdle) return;
+            _isIdle = true;
+            // Fall back to walk sprite for current direction, frozen at frame 0
+            CurrentAction = PlayerAction.Walk;
+            SwitchActive();
+            _active?.Reset();
+            return;
+        }
+
+        _isIdle = false;
         if (action == CurrentAction) return;
         CurrentAction = action;
         SwitchActive();
@@ -71,7 +84,10 @@ public sealed class ZinkAnimator : CharacterAnimator
         _active.Reset();
     }
 
-    public override void Update(float deltaSeconds) => _active?.Update(deltaSeconds);
+    public override void Update(float deltaSeconds)
+    {
+        if (!_isIdle) _active?.Update(deltaSeconds);
+    }
 
     public override void Draw(SpriteBatch sb, Vector2 position, Color color, float scale = 1f)
         => _active?.Draw(sb, position, color, scale);

@@ -6,7 +6,7 @@ using Multiplay.Shared;
 namespace Multiplay.Client.Graphics;
 
 public enum Direction  { S, N, E, W }
-public enum PlayerAction { Walk, SwordAttack, ClassicSwordAttack, BowAttack, WandAttack, Jump, Death }
+public enum PlayerAction { Idle, Walk, SwordAttack, ClassicSwordAttack, BowAttack, WandAttack, Jump, Death }
 
 /// <summary>Common interface for all character animators.</summary>
 public abstract class CharacterAnimator
