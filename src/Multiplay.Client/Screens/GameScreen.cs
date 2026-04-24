@@ -31,6 +31,10 @@ public sealed class GameScreen : Screen
     private readonly Dictionary<int, float>    _enemyDirX  = []; // +1 right, -1 left
     private AnimatedSprite? _slimeSprite;
 
+    private float _localFlashTimer;
+    private readonly Dictionary<int, float> _remoteFlashTimers = [];
+    private const float FlashDuration = 0.4f; // 2 flashes × 0.2 s each
+
     // Static reference dummies for checking collider sizes
     private (CharacterAnimator Anim, Vector2 Pos, string CharType)[] _dummyChars = [];
     private Vector2[] _dummySlimes = [];
@@ -158,6 +162,21 @@ public sealed class GameScreen : Screen
             }
             _enemies[e.Id] = e;
         };
+
+        _network.PlayerDamaged += (id, x, y) =>
+        {
+            if (id == _network.LocalId)
+            {
+                _localPos = new Vector2(x, y);
+                _localFlashTimer = FlashDuration;
+            }
+            else
+            {
+                if (_remotePlayers.TryGetValue(id, out var cur))
+                    _remotePlayers[id] = cur with { X = x, Y = y };
+                _remoteFlashTimers[id] = FlashDuration;
+            }
+        };
     }
 
     public override void Update(GameTime gameTime)
@@ -168,6 +187,12 @@ public sealed class GameScreen : Screen
         HandleMovement(dt);
 
         _localAnimator.Update(dt);
+
+        if (_localFlashTimer > 0f) _localFlashTimer = MathF.Max(0f, _localFlashTimer - dt);
+        foreach (var id in _remoteFlashTimers.Keys.ToArray())
+        {
+            _remoteFlashTimers[id] = MathF.Max(0f, _remoteFlashTimers[id] - dt);
+        }
 
         foreach (var id in _remoteIdleTimers.Keys.ToArray())
         {
@@ -239,9 +264,12 @@ public sealed class GameScreen : Screen
 
         foreach (var (id, p) in _remotePlayers)
             if (_remoteAnimators.TryGetValue(id, out var a))
-                a.Draw(_spriteBatch, new Vector2(p.X, p.Y), Color.White, scale: 2f);
+            {
+                var tint = FlashColor(_remoteFlashTimers.GetValueOrDefault(id));
+                a.Draw(_spriteBatch, new Vector2(p.X, p.Y), tint, scale: 2f);
+            }
 
-        _localAnimator.Draw(_spriteBatch, _localPos, Color.White, scale: 2f);
+        _localAnimator.Draw(_spriteBatch, _localPos, FlashColor(_localFlashTimer), scale: 2f);
 
         if (_slimeSprite is not null)
             foreach (var e in _enemies.Values)
@@ -302,4 +330,8 @@ public sealed class GameScreen : Screen
         Math.Abs(dx) >= Math.Abs(dy)
             ? (dx >= 0 ? Direction.E : Direction.W)
             : (dy >= 0 ? Direction.S : Direction.N);
+
+    // Produces a red flash: 2 red pulses over FlashDuration, alternating every 0.1 s
+    private static Color FlashColor(float timer) =>
+        timer > 0f && (int)(timer / 0.1f) % 2 == 1 ? Color.Red : Color.White;
 }

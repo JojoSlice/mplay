@@ -29,6 +29,8 @@ public sealed class NetworkManager : INetworkManager, INetEventListener
     public event Action<EnemyInfo[]>?       EnemySnapshotReceived;
     public event Action<EnemyInfo>?         EnemyMoved;
 
+    public event Action<int, float, float>? PlayerDamaged;
+
     public NetworkManager()
     {
         _net = new NetManager(this) { AutoRecycle = true };
@@ -98,6 +100,10 @@ public sealed class NetworkManager : INetworkManager, INetEventListener
             }
             case PacketType.EnemyMoved:
                 EnemyMoved?.Invoke(reader.ReadEnemyInfo());
+                break;
+
+            case PacketType.PlayerDamaged:
+                PlayerDamaged?.Invoke(reader.GetInt(), reader.GetFloat(), reader.GetFloat());
                 break;
         }
     }

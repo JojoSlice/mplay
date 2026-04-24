@@ -21,11 +21,15 @@ public sealed class GameLogic
     private const float MapMaxX          = 786f;
     private const float HopCycle         = 7 * 0.18f; // matches 7-frame animation at 0.18 s/frame
 
+    private const float AttackPushback    = 80f;
+    private const float HitCooldown       = 1.0f; // seconds before the same enemy can hit the same player again
+
     private readonly IGameState       _state;
     private readonly IGameBroadcaster _broadcaster;
     private readonly EnemyInfo[]      _enemies;
     private readonly float[]          _enemyDirX;
     private readonly float[]          _enemyHopTime; // elapsed seconds within current hop cycle
+    private readonly Dictionary<(int enemyId, int playerId), float> _playerHitCooldowns = [];
 
     public GameLogic(IGameState state, IGameBroadcaster broadcaster)
     {
@@ -118,10 +122,19 @@ public sealed class GameLogic
 
     public void TickEnemies(float dt)
     {
+        // Tick down hit cooldowns
+        foreach (var key in _playerHitCooldowns.Keys.ToArray())
+        {
+            _playerHitCooldowns[key] -= dt;
+            if (_playerHitCooldowns[key] <= 0f)
+                _playerHitCooldowns.Remove(key);
+        }
+
         for (int i = 0; i < _enemies.Length; i++)
         {
             _enemyHopTime[i] = (_enemyHopTime[i] + dt) % HopCycle;
             float speed = _enemyHopTime[i] < HopCycle / 2f ? EnemyMinSpeed : EnemyMaxSpeed;
+            bool  isAttacking = _enemyHopTime[i] < HopCycle / 2f;
 
             float newX = _enemies[i].X + speed * _enemyDirX[i] * dt;
             if (newX <= MapMinX || newX >= MapMaxX)
@@ -132,24 +145,54 @@ public sealed class GameLogic
 
             _enemies[i] = _enemies[i] with { X = newX };
 
-            // Push any overlapping players out of the enemy's new position
-            var e  = _enemies[i];
+            var e    = _enemies[i];
             float er = ColliderRadius.ForEnemy(e.Type);
+
             foreach (var player in _state.All)
             {
                 float pr = ColliderRadius.ForCharacter(player.CharacterType);
                 if (!Collision.Overlaps(player.X, player.Y, pr, e.X, e.Y, er)) continue;
-                var (sepX, sepY) = Collision.Resolve(player.X, player.Y, pr, e.X, e.Y, er);
-                float nx = player.X + sepX;
-                float ny = player.Y + sepY;
-                if (!_state.TryMove(player.Id, nx, ny)) continue;
 
-                var pw = new NetDataWriter();
-                pw.Put((byte)PacketType.PlayerMoved);
-                pw.Put(player.Id);
-                pw.Put(nx);
-                pw.Put(ny);
-                _broadcaster.Broadcast(pw, DeliveryMethod.Unreliable);
+                var cooldownKey = (e.Id, player.Id);
+                if (isAttacking && !_playerHitCooldowns.ContainsKey(cooldownKey))
+                {
+                    // Attack hit: large pushback away from enemy centre
+                    float dx = player.X - e.X;
+                    float dy = player.Y - e.Y;
+                    float len = MathF.Sqrt(dx * dx + dy * dy);
+                    if (len < 0.0001f) { dx = 1f; dy = 0f; len = 1f; }
+                    float nx = player.X + dx / len * AttackPushback;
+                    float ny = player.Y + dy / len * AttackPushback;
+                    nx = Math.Clamp(nx, 0, 800);
+                    ny = Math.Clamp(ny, 0, 600);
+
+                    if (_state.TryMove(player.Id, nx, ny))
+                    {
+                        _playerHitCooldowns[cooldownKey] = HitCooldown;
+
+                        var pw = new NetDataWriter();
+                        pw.Put((byte)PacketType.PlayerDamaged);
+                        pw.Put(player.Id);
+                        pw.Put(nx);
+                        pw.Put(ny);
+                        _broadcaster.Broadcast(pw, DeliveryMethod.ReliableOrdered);
+                    }
+                }
+                else if (!isAttacking)
+                {
+                    // Passive contact: normal separation push
+                    var (sepX, sepY) = Collision.Resolve(player.X, player.Y, pr, e.X, e.Y, er);
+                    float nx = player.X + sepX;
+                    float ny = player.Y + sepY;
+                    if (!_state.TryMove(player.Id, nx, ny)) continue;
+
+                    var pw = new NetDataWriter();
+                    pw.Put((byte)PacketType.PlayerMoved);
+                    pw.Put(player.Id);
+                    pw.Put(nx);
+                    pw.Put(ny);
+                    _broadcaster.Broadcast(pw, DeliveryMethod.Unreliable);
+                }
             }
 
             // Broadcast enemy position

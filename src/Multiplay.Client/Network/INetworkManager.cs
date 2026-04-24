@@ -15,6 +15,8 @@ public interface INetworkManager : IDisposable
     event Action<EnemyInfo[]>?          EnemySnapshotReceived;
     event Action<EnemyInfo>?            EnemyMoved;
 
+    event Action<int, float, float>?    PlayerDamaged; // (playerId, newX, newY)
+
     void Connect(string host, int port, string token);
     void SendMove(float x, float y);
     void PollEvents();
