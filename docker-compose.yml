@@ -25,6 +25,7 @@ services:
       - ConnectionStrings__DefaultConnection=Host=db;Database=multiplay;Username=postgres;Password=postgres
     ports:
       - "5000:5000"
+      - "9050:9050/udp"
     depends_on:
       db:
         condition: service_healthy

@@ -25,11 +25,18 @@ public sealed class GameScreen : Screen
     private readonly Dictionary<int, CharacterAnimator> _remoteAnimators = [];
     private Vector2 _localPos = new(400, 300);
 
-    private readonly Dictionary<int, EnemyInfo> _enemies = [];
+    private readonly Dictionary<int, EnemyInfo> _enemies    = [];
+    private readonly Dictionary<int, float>    _enemyDirX  = []; // +1 right, -1 left
     private AnimatedSprite? _slimeSprite;
+
+    // Static reference dummies for checking collider sizes
+    private (CharacterAnimator Anim, Vector2 Pos, string CharType)[] _dummyChars = [];
+    private Vector2[] _dummySlimes = [];
 
     private CharacterAnimator _localAnimator = null!;
     private KeyboardState _prevKb;
+
+    private SpriteFont? _debugFont;
 
     private TileMapRenderer? _map;
     private static readonly string MapPath = "";
@@ -50,8 +57,23 @@ public sealed class GameScreen : Screen
             _auth.CharacterType ?? Shared.CharacterType.Zink);
         _localAnimator.LoadContent(content);
 
-        var slimeTex = content.Load<Texture2D>("Sprites/Enemies/sprSlimeIdle");
-        _slimeSprite = new AnimatedSprite(slimeTex, frameWidth: 16, frameHeight: 16, fps: 6f);
+        var slimeTex = content.Load<Texture2D>("Sprites/Enemies/sprSlimeJump");
+        _slimeSprite = new AnimatedSprite(slimeTex, frameWidth: 16, frameHeight: 16, fps: 1f / 0.18f);
+
+        if (DevFlags.DebugColliders)
+        {
+            DebugDraw.Initialize(gd);
+            _debugFont = content.Load<SpriteFont>("Fonts/Default");
+        }
+
+        // One of each character type in a row, then slimes below
+        _dummyChars =
+        [
+            (CreateAnimator(content, CharacterType.Zink),         new Vector2(150, 120), CharacterType.Zink),
+            (CreateAnimator(content, CharacterType.ShieldKnight), new Vector2(300, 120), CharacterType.ShieldKnight),
+            (CreateAnimator(content, CharacterType.SwordKnight),  new Vector2(450, 120), CharacterType.SwordKnight),
+        ];
+        _dummySlimes = [new Vector2(400, 200)];
 
         if (MapPath != string.Empty)
         {
@@ -86,6 +108,13 @@ public sealed class GameScreen : Screen
 
         _network.PlayerMoved += (id, x, y) =>
         {
+            // Server-authoritative correction for the local player (e.g. pushed by an enemy)
+            if (id == _network.LocalId)
+            {
+                _localPos = new Vector2(x, y);
+                return;
+            }
+
             if (!_remotePlayers.TryGetValue(id, out var cur)) return;
             _remotePlayers[id] = cur with { X = x, Y = y };
             if (_remoteAnimators.TryGetValue(id, out var anim))
@@ -104,11 +133,24 @@ public sealed class GameScreen : Screen
         _network.EnemySnapshotReceived += enemies =>
         {
             _enemies.Clear();
+            _enemyDirX.Clear();
             foreach (var e in enemies)
-                _enemies[e.Id] = e;
+            {
+                _enemies[e.Id]   = e;
+                _enemyDirX[e.Id] = 1f;
+            }
         };
 
-        _network.EnemyMoved += e => _enemies[e.Id] = e;
+        _network.EnemyMoved += e =>
+        {
+            if (_enemies.TryGetValue(e.Id, out var prev))
+            {
+                float dx = e.X - prev.X;
+                if (MathF.Abs(dx) > 0.001f)
+                    _enemyDirX[e.Id] = MathF.Sign(dx);
+            }
+            _enemies[e.Id] = e;
+        };
     }
 
     public override void Update(GameTime gameTime)
@@ -120,6 +162,7 @@ public sealed class GameScreen : Screen
 
         _localAnimator.Update(dt);
         foreach (var a in _remoteAnimators.Values) a.Update(dt);
+        foreach (var (anim, _, _) in _dummyChars) anim.Update(dt);
         _slimeSprite?.Update(dt);
 
         _prevKb = Keyboard.GetState();
@@ -137,9 +180,31 @@ public sealed class GameScreen : Screen
 
         if (vel != Vector2.Zero)
         {
-            _localPos += Vector2.Normalize(vel) * (Speed * dt);
-            _localPos.X = Math.Clamp(_localPos.X, 0, 800);
-            _localPos.Y = Math.Clamp(_localPos.Y, 0, 600);
+            var newPos = _localPos + Vector2.Normalize(vel) * (Speed * dt);
+            newPos.X = Math.Clamp(newPos.X, 0, 800);
+            newPos.Y = Math.Clamp(newPos.Y, 0, 600);
+
+            float pr = ColliderRadius.ForCharacter(_auth.CharacterType);
+
+            foreach (var e in _enemies.Values)
+            {
+                float er = ColliderRadius.ForEnemy(e.Type);
+                if (!Collision.Overlaps(newPos.X, newPos.Y, pr, e.X, e.Y, er)) continue;
+                var (sepX, sepY) = Collision.Resolve(newPos.X, newPos.Y, pr, e.X, e.Y, er);
+                newPos.X += sepX;
+                newPos.Y += sepY;
+            }
+
+            foreach (var p in _remotePlayers.Values)
+            {
+                float or = ColliderRadius.ForCharacter(p.CharacterType);
+                if (!Collision.Overlaps(newPos.X, newPos.Y, pr, p.X, p.Y, or)) continue;
+                var (sepX, sepY) = Collision.Resolve(newPos.X, newPos.Y, pr, p.X, p.Y, or);
+                newPos.X += sepX;
+                newPos.Y += sepY;
+            }
+
+            _localPos = newPos;
             _localAnimator.SetDirection(InferDirection(vel.X, vel.Y));
             _localAnimator.SetAction(PlayerAction.Walk);
             _network.SendMove(_localPos.X, _localPos.Y);
@@ -165,7 +230,48 @@ public sealed class GameScreen : Screen
 
         if (_slimeSprite is not null)
             foreach (var e in _enemies.Values)
-                _slimeSprite.Draw(_spriteBatch, new Vector2(e.X, e.Y), Color.White, scale: 2f);
+            {
+                var fx = _enemyDirX.GetValueOrDefault(e.Id, 1f) < 0
+                    ? SpriteEffects.FlipHorizontally
+                    : SpriteEffects.None;
+                _slimeSprite.Draw(_spriteBatch, new Vector2(e.X, e.Y), Color.White, scale: 2f, fx);
+            }
+
+        // Reference dummies
+        foreach (var (anim, pos, _) in _dummyChars)
+            anim.Draw(_spriteBatch, pos, Color.White, scale: 2f);
+        if (_slimeSprite is not null)
+            foreach (var pos in _dummySlimes)
+                _slimeSprite.Draw(_spriteBatch, pos, Color.White, scale: 2f);
+
+        if (DevFlags.DebugColliders)
+        {
+            float lr = ColliderRadius.ForCharacter(_auth.CharacterType);
+            DebugDraw.Circle(_spriteBatch, _localPos, lr, Color.LimeGreen);
+
+            foreach (var p in _remotePlayers.Values)
+                DebugDraw.Circle(_spriteBatch, new Vector2(p.X, p.Y),
+                    ColliderRadius.ForCharacter(p.CharacterType), Color.Yellow);
+
+            foreach (var e in _enemies.Values)
+                DebugDraw.Circle(_spriteBatch, new Vector2(e.X, e.Y),
+                    ColliderRadius.ForEnemy(e.Type), Color.Red);
+
+            // Dummy colliders
+            foreach (var (_, pos, charType) in _dummyChars)
+                DebugDraw.Circle(_spriteBatch, pos, ColliderRadius.ForCharacter(charType), Color.LimeGreen);
+            foreach (var pos in _dummySlimes)
+                DebugDraw.Circle(_spriteBatch, pos, ColliderRadius.ForEnemy(EnemyType.Slime), Color.Red);
+
+            // HUD
+            if (_debugFont is not null)
+            {
+                var conn    = _network.IsConnected ? "connected" : "NOT connected";
+                var connClr = _network.IsConnected ? Color.LimeGreen : Color.OrangeRed;
+                _spriteBatch.DrawString(_debugFont, $"server: {conn}", new Vector2(8, 8),  connClr);
+                _spriteBatch.DrawString(_debugFont, $"enemies: {_enemies.Count}", new Vector2(8, 24), Color.White);
+            }
+        }
 
         _spriteBatch.End();
     }
