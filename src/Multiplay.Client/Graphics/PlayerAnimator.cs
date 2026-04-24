@@ -10,7 +10,7 @@ namespace Multiplay.Client.Graphics;
 /// </summary>
 public sealed class ZinkAnimator : CharacterAnimator
 {
-    private const int FrameW = 16;
+    private const int FrameW = 48;
     private const int FrameH = 48;
 
     private readonly Dictionary<(PlayerAction, Direction), AnimatedSprite> _sprites = [];

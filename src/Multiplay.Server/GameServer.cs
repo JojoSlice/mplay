@@ -65,11 +65,18 @@ public sealed class GameServer : IHostedService, INetEventListener
 
     private async Task PollLoop(CancellationToken ct)
     {
+        var lastTick = DateTime.UtcNow;
         try
         {
             while (!ct.IsCancellationRequested)
             {
+                var now = DateTime.UtcNow;
+                float dt = (float)(now - lastTick).TotalSeconds;
+                lastTick = now;
+
                 _net.PollEvents();
+                _logic.TickEnemies(dt);
+
                 await Task.Delay(15, ct); // ~66 Hz tick rate
             }
         }

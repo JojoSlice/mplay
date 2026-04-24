@@ -26,6 +26,9 @@ public sealed class NetworkManager : INetworkManager, INetEventListener
     public event Action<int, float, float>? PlayerMoved;
     public event Action<int>?               PlayerLeft;
 
+    public event Action<EnemyInfo[]>?       EnemySnapshotReceived;
+    public event Action<EnemyInfo>?         EnemyMoved;
+
     public NetworkManager()
     {
         _net = new NetManager(this) { AutoRecycle = true };
@@ -82,6 +85,19 @@ public sealed class NetworkManager : INetworkManager, INetEventListener
 
             case PacketType.PlayerMoved:
                 PlayerMoved?.Invoke(reader.GetInt(), reader.GetFloat(), reader.GetFloat());
+                break;
+
+            case PacketType.EnemySnapshot:
+            {
+                int count = reader.GetInt();
+                var enemies = new EnemyInfo[count];
+                for (int i = 0; i < count; i++)
+                    enemies[i] = reader.ReadEnemyInfo();
+                EnemySnapshotReceived?.Invoke(enemies);
+                break;
+            }
+            case PacketType.EnemyMoved:
+                EnemyMoved?.Invoke(reader.ReadEnemyInfo());
                 break;
         }
     }

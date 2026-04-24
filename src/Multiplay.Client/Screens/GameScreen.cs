@@ -25,6 +25,9 @@ public sealed class GameScreen : Screen
     private readonly Dictionary<int, CharacterAnimator> _remoteAnimators = [];
     private Vector2 _localPos = new(400, 300);
 
+    private readonly Dictionary<int, EnemyInfo> _enemies = [];
+    private AnimatedSprite? _slimeSprite;
+
     private CharacterAnimator _localAnimator = null!;
     private KeyboardState _prevKb;
 
@@ -46,6 +49,9 @@ public sealed class GameScreen : Screen
         _localAnimator = CharacterAnimator.Create(
             _auth.CharacterType ?? Shared.CharacterType.Zink);
         _localAnimator.LoadContent(content);
+
+        var slimeTex = content.Load<Texture2D>("Sprites/Enemies/sprSlimeIdle");
+        _slimeSprite = new AnimatedSprite(slimeTex, frameWidth: 16, frameHeight: 16, fps: 6f);
 
         if (MapPath != string.Empty)
         {
@@ -94,6 +100,15 @@ public sealed class GameScreen : Screen
             _remotePlayers.Remove(id);
             _remoteAnimators.Remove(id);
         };
+
+        _network.EnemySnapshotReceived += enemies =>
+        {
+            _enemies.Clear();
+            foreach (var e in enemies)
+                _enemies[e.Id] = e;
+        };
+
+        _network.EnemyMoved += e => _enemies[e.Id] = e;
     }
 
     public override void Update(GameTime gameTime)
@@ -105,6 +120,7 @@ public sealed class GameScreen : Screen
 
         _localAnimator.Update(dt);
         foreach (var a in _remoteAnimators.Values) a.Update(dt);
+        _slimeSprite?.Update(dt);
 
         _prevKb = Keyboard.GetState();
     }
@@ -121,7 +137,7 @@ public sealed class GameScreen : Screen
 
         if (vel != Vector2.Zero)
         {
-            _localPos += vel * (Speed * dt);
+            _localPos += Vector2.Normalize(vel) * (Speed * dt);
             _localPos.X = Math.Clamp(_localPos.X, 0, 800);
             _localPos.Y = Math.Clamp(_localPos.Y, 0, 600);
             _localAnimator.SetDirection(InferDirection(vel.X, vel.Y));
@@ -146,6 +162,10 @@ public sealed class GameScreen : Screen
                 a.Draw(_spriteBatch, new Vector2(p.X, p.Y), Color.White, scale: 2f);
 
         _localAnimator.Draw(_spriteBatch, _localPos, Color.White, scale: 2f);
+
+        if (_slimeSprite is not null)
+            foreach (var e in _enemies.Values)
+                _slimeSprite.Draw(_spriteBatch, new Vector2(e.X, e.Y), Color.White, scale: 2f);
 
         _spriteBatch.End();
     }

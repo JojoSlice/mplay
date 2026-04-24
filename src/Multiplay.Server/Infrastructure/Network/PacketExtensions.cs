@@ -13,4 +13,12 @@ internal static class PacketExtensions
         w.Put(p.Y);
         w.Put(p.CharacterType ?? CharacterType.Zink);
     }
+
+    internal static void WriteEnemyInfo(this NetDataWriter w, EnemyInfo e)
+    {
+        w.Put(e.Id);
+        w.Put(e.Type);
+        w.Put(e.X);
+        w.Put(e.Y);
+    }
 }

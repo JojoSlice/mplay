@@ -6,11 +6,11 @@ namespace Multiplay.Client.Graphics;
 
 /// <summary>
 /// Animator for ShieldKnight and SwordKnight.
-/// These enemies only have a 4-directional walk animation (16×32 px, 4 frames).
+/// These enemies only have a 4-directional walk animation (32×32 px per frame).
 /// </summary>
 public sealed class KnightAnimator : CharacterAnimator
 {
-    private const int FrameW = 16;
+    private const int FrameW = 32;
     private const int FrameH = 32;
     private const float Fps  = 6f;
 
