@@ -125,8 +125,15 @@ public sealed class GameServer : IHostedService, INetEventListener
         NetPeer peer, NetPacketReader reader, byte channel, DeliveryMethod delivery)
     {
         var type = (PacketType)reader.GetByte();
-        if (type == PacketType.Move)
-            _logic.OnMove(peer.Id, reader.GetFloat(), reader.GetFloat());
+        switch (type)
+        {
+            case PacketType.Move:
+                _logic.OnMove(peer.Id, reader.GetFloat(), reader.GetFloat());
+                break;
+            case PacketType.Attack:
+                _logic.OnAttack(peer.Id, reader.GetFloat(), reader.GetFloat());
+                break;
+        }
     }
 
     // ── Persistence (fire-and-forget, non-critical) ─────────────────────────────

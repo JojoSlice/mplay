@@ -10,8 +10,11 @@ public enum PacketType : byte
     EnemySnapshot  = 4,
     EnemyMoved     = 5,
     PlayerDamaged  = 6,
+    EnemyDamaged   = 7,
+    PlayerStats    = 8,
     // Client → Server
-    Move = 10,
+    Move   = 10,
+    Attack = 11,
 }
 
 /// <summary>Valid character type identifiers.</summary>

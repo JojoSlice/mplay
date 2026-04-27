@@ -17,9 +17,15 @@ public sealed class ZinkAnimator : CharacterAnimator
     private (PlayerAction action, Direction dir) _current = (PlayerAction.Walk, Direction.S);
     private AnimatedSprite? _active;
     private bool _isIdle;
+    private bool _isAttacking;
 
-    public Direction    CurrentDirection { get; private set; } = Direction.S;
-    public PlayerAction CurrentAction    { get; private set; } = PlayerAction.Walk;
+    private Direction    _currentDirection = Direction.S;
+    private PlayerAction _currentAction    = PlayerAction.Walk;
+
+    public override Direction CurrentDirection => _currentDirection;
+    public PlayerAction       CurrentAction    => _currentAction;
+
+    public override bool IsAttacking => _isAttacking;
 
     public override void LoadContent(ContentManager content)
     {
@@ -51,33 +57,48 @@ public sealed class ZinkAnimator : CharacterAnimator
 
     public override void SetDirection(Direction dir)
     {
-        if (dir == CurrentDirection) return;
-        CurrentDirection = dir;
+        if (dir == _currentDirection) return;
+        _currentDirection = dir;
         SwitchActive();
     }
 
+    private static bool IsAttackAction(PlayerAction a) =>
+        a is PlayerAction.SwordAttack;
+
     public override void SetAction(PlayerAction action)
     {
+        // Attack plays to completion — nothing can interrupt it
+        if (_isAttacking) return;
+
         if (action == PlayerAction.Idle)
         {
             if (_isIdle) return;
-            _isIdle = true;
-            // Fall back to walk sprite for current direction, frozen at frame 0
-            CurrentAction = PlayerAction.Walk;
+            _isIdle        = true;
+            _currentAction = PlayerAction.Walk;
             SwitchActive();
             _active?.Reset();
             return;
         }
 
         _isIdle = false;
-        if (action == CurrentAction) return;
-        CurrentAction = action;
+
+        if (IsAttackAction(action))
+        {
+            _isAttacking   = true;
+            _currentAction = action;
+            SwitchActive();
+            if (_active is not null) { _active.Loop = false; _active.Reset(); }
+            return;
+        }
+
+        if (action == _currentAction) return;
+        _currentAction = action;
         SwitchActive();
     }
 
     private void SwitchActive()
     {
-        var key = (CurrentAction, CurrentDirection);
+        var key = (_currentAction, _currentDirection);
         if (!_sprites.TryGetValue(key, out var next)) return;
         _active  = next;
         _current = key;
@@ -86,7 +107,17 @@ public sealed class ZinkAnimator : CharacterAnimator
 
     public override void Update(float deltaSeconds)
     {
-        if (!_isIdle) _active?.Update(deltaSeconds);
+        if (_isIdle) return;
+        _active?.Update(deltaSeconds);
+
+        // Return to walk once the attack animation finishes
+        if (_isAttacking && (_active?.IsFinished ?? false))
+        {
+            _isAttacking   = false;
+            _currentAction = PlayerAction.Walk;
+            if (_active is not null) _active.Loop = true;
+            SwitchActive();
+        }
     }
 
     public override void Draw(SpriteBatch sb, Vector2 position, Color color, float scale = 1f)

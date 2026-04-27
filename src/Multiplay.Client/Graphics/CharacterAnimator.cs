@@ -17,6 +17,12 @@ public abstract class CharacterAnimator
     public abstract void Update(float deltaSeconds);
     public abstract void Draw(SpriteBatch sb, Vector2 position, Color color, float scale = 1f);
 
+    /// <summary>True while a one-shot attack animation is playing.</summary>
+    public virtual bool IsAttacking => false;
+
+    /// <summary>The direction the character is currently facing.</summary>
+    public virtual Direction CurrentDirection => Direction.S;
+
     /// <summary>Factory: creates the right animator for the given character type string.</summary>
     public static CharacterAnimator Create(string characterType)
     {

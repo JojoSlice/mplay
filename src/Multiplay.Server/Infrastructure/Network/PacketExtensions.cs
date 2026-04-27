@@ -21,4 +21,16 @@ internal static class PacketExtensions
         w.Put(e.X);
         w.Put(e.Y);
     }
+
+    internal static void WritePlayerStats(this NetDataWriter w, PlayerStats s)
+    {
+        w.Put(s.Health);
+        w.Put(s.MaxHealth);
+        w.Put(s.Attack);
+        w.Put(s.Defence);
+        w.Put(s.Stamina);
+        w.Put(s.MaxStamina);
+        w.Put(s.MagicPower);
+        w.Put(s.MaxMagicPower);
+    }
 }

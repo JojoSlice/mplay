@@ -19,7 +19,8 @@ public sealed class KnightAnimator : CharacterAnimator
     private AnimatedSprite? _active;
     private bool _isIdle;
 
-    public Direction CurrentDirection { get; private set; } = Direction.S;
+    private Direction _currentDirection = Direction.S;
+    public override Direction CurrentDirection => _currentDirection;
 
     public KnightAnimator(string spriteName) => _spriteName = spriteName;
 
@@ -38,8 +39,8 @@ public sealed class KnightAnimator : CharacterAnimator
 
     public override void SetDirection(Direction dir)
     {
-        if (dir == CurrentDirection) return;
-        CurrentDirection = dir;
+        if (dir == _currentDirection) return;
+        _currentDirection = dir;
         if (_sprites.TryGetValue(dir, out var next))
         {
             _active = next;

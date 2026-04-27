@@ -21,15 +21,17 @@ public sealed class NetworkManager : INetworkManager, INetEventListener
     public int  LocalId     { get; private set; } = -1;
     public bool IsConnected => _server?.ConnectionState == ConnectionState.Connected;
 
-    public event Action<int, PlayerInfo[]>? WorldSnapshotReceived;
-    public event Action<PlayerInfo>?        PlayerJoined;
-    public event Action<int, float, float>? PlayerMoved;
-    public event Action<int>?               PlayerLeft;
+    public event Action<int, PlayerInfo[]>?      WorldSnapshotReceived;
+    public event Action<PlayerInfo>?             PlayerJoined;
+    public event Action<int, float, float>?      PlayerMoved;
+    public event Action<int>?                    PlayerLeft;
 
-    public event Action<EnemyInfo[]>?       EnemySnapshotReceived;
-    public event Action<EnemyInfo>?         EnemyMoved;
+    public event Action<EnemyInfo[], int[]>?     EnemySnapshotReceived;
+    public event Action<EnemyInfo>?              EnemyMoved;
+    public event Action<EnemyInfo, int>?         EnemyDamaged;
 
-    public event Action<int, float, float>? PlayerDamaged;
+    public event Action<int, float, float, int>? PlayerDamaged;
+    public event Action<PlayerStats>?            PlayerStatsReceived;
 
     public NetworkManager()
     {
@@ -50,6 +52,16 @@ public sealed class NetworkManager : INetworkManager, INetEventListener
         w.Put(x);
         w.Put(y);
         _server!.Send(w, DefaultChannel, DeliveryMethod.Unreliable);
+    }
+
+    public void SendAttack(float dirX, float dirY)
+    {
+        if (!IsConnected) return;
+        var w = new NetDataWriter();
+        w.Put((byte)PacketType.Attack);
+        w.Put(dirX);
+        w.Put(dirY);
+        _server!.Send(w, DefaultChannel, DeliveryMethod.ReliableOrdered);
     }
 
     // ── INetEventListener ──────────────────────────────────────────────────────
@@ -91,19 +103,35 @@ public sealed class NetworkManager : INetworkManager, INetEventListener
 
             case PacketType.EnemySnapshot:
             {
-                int count = reader.GetInt();
+                int count   = reader.GetInt();
                 var enemies = new EnemyInfo[count];
+                var healths = new int[count];
                 for (int i = 0; i < count; i++)
+                {
                     enemies[i] = reader.ReadEnemyInfo();
-                EnemySnapshotReceived?.Invoke(enemies);
+                    healths[i] = reader.GetInt();
+                }
+                EnemySnapshotReceived?.Invoke(enemies, healths);
                 break;
             }
             case PacketType.EnemyMoved:
                 EnemyMoved?.Invoke(reader.ReadEnemyInfo());
                 break;
 
+            case PacketType.EnemyDamaged:
+            {
+                var e      = reader.ReadEnemyInfo();
+                int health = reader.GetInt();
+                EnemyDamaged?.Invoke(e, health);
+                break;
+            }
             case PacketType.PlayerDamaged:
-                PlayerDamaged?.Invoke(reader.GetInt(), reader.GetFloat(), reader.GetFloat());
+                PlayerDamaged?.Invoke(
+                    reader.GetInt(), reader.GetFloat(), reader.GetFloat(), reader.GetInt());
+                break;
+
+            case PacketType.PlayerStats:
+                PlayerStatsReceived?.Invoke(reader.ReadPlayerStats());
                 break;
         }
     }

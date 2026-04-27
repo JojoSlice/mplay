@@ -48,20 +48,34 @@ public sealed class AnimatedSprite
         _frameDurations = frameDurations;
     }
 
+    /// <summary>When false the animation stops on the last frame instead of looping.</summary>
+    public bool Loop { get; set; } = true;
+
+    /// <summary>True after a non-looping animation plays its last frame.</summary>
+    public bool IsFinished { get; private set; }
+
     /// <summary>Reset the animation back to frame 0.</summary>
     public void Reset()
     {
         _elapsed      = 0;
         _currentFrame = 0;
+        IsFinished    = false;
     }
 
     public void Update(float deltaSeconds)
     {
+        if (IsFinished) return;
         _elapsed += deltaSeconds;
         if (_elapsed >= _frameDurations[_currentFrame])
         {
             _elapsed -= _frameDurations[_currentFrame];
-            _currentFrame = (_currentFrame + 1) % _frameCount;
+            int next = _currentFrame + 1;
+            if (next >= _frameCount)
+            {
+                if (Loop) _currentFrame = 0;
+                else { _currentFrame = _frameCount - 1; IsFinished = true; }
+            }
+            else _currentFrame = next;
         }
     }
 
