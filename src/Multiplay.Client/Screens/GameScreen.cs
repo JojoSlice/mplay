@@ -19,23 +19,25 @@ public sealed class GameScreen : Screen
     private readonly IAuthService    _auth;
     private readonly INetworkManager _network;
 
-    private SpriteBatch _spriteBatch = null!;
+    private ContentManager _content    = null!;
+    private SpriteBatch    _spriteBatch = null!;
+    private SpriteFont     _font        = null!;
 
-    private readonly Dictionary<int, PlayerInfo>        _remotePlayers   = [];
-    private readonly Dictionary<int, CharacterAnimator> _remoteAnimators = [];
+    private readonly Dictionary<int, PlayerInfo>        _remotePlayers    = [];
+    private readonly Dictionary<int, CharacterAnimator> _remoteAnimators  = [];
     private readonly Dictionary<int, float>             _remoteIdleTimers = [];
-    private const float IdleThreshold  = 0.15f;
-    private const float AttackOffset   = 28f; // must match server
+    private const float IdleThreshold = 0.15f;
+    private const float AttackOffset  = 28f; // must match server
     private Vector2 _localPos = new(400, 300);
 
-    private readonly Dictionary<int, EnemyInfo> _enemies    = [];
-    private readonly Dictionary<int, float>    _enemyDirX  = []; // +1 right, -1 left
+    private readonly Dictionary<int, EnemyInfo> _enemies   = [];
+    private readonly Dictionary<int, float>     _enemyDirX = []; // +1 right, -1 left
 
     private bool    _isDashing    = false;
     private float   _dashTimer    = 0f;
     private float   _dashCooldown = 0f;
-    private Vector2 _dashDir      = new(0f, 1f);  // last dash / last move direction
-    private Vector2 _lastMoveDir  = new(0f, 1f);  // updated each frame during normal movement
+    private Vector2 _dashDir      = new(0f, 1f);
+    private Vector2 _lastMoveDir  = new(0f, 1f);
 
     private const float DashSpeed    = 600f;
     private const float DashDuration = 0.18f;
@@ -44,21 +46,35 @@ public sealed class GameScreen : Screen
     private float _localFlashTimer;
     private readonly Dictionary<int, float> _remoteFlashTimers = [];
     private readonly Dictionary<int, float> _enemyFlashTimers  = [];
-    private const float FlashDuration = 0.4f; // 2 flashes × 0.2 s each
+    private const float FlashDuration = 0.4f;
 
     private PlayerStats _localStats;
     private readonly Dictionary<int, (int health, int maxHealth)> _remotePlayerHealth = [];
     private readonly Dictionary<int, (int health, int maxHealth)> _enemyHealth        = [];
     private Texture2D _pixel = null!;
 
-    private CharacterAnimator _localAnimator = null!;
-    private KeyboardState _prevKb;
+    private AnimatedSprite _slimeIdleSprite = null!;
+    private AnimatedSprite _slimeJumpSprite = null!;
 
-    private SpriteFont? _debugFont;
+    private CharacterAnimator _localAnimator = null!;
+    private KeyboardState     _prevKb;
 
     private TileMapRenderer? _map;
-    private Rectangle        _playArea     = new(0, 0, 800, 800);
-    private List<Rectangle>  _mapColliders = [];
+    private Rectangle        _playArea          = new(0, 0, 800, 800);
+    private List<Rectangle>  _mapColliders      = [];
+    private List<Vector2[]>  _mapPolyColliders  = [];
+    private List<(string Name, Rectangle Bounds)> _interactableZones = [];
+
+    private string? _activePrompt;
+    private string? _activeTargetMap;
+    private string  _currentMapFile = "hub.tmx";
+    private bool    EnemiesActive   => _currentMapFile == "map1.tmx";
+
+    private static readonly Dictionary<string, (string Prompt, string MapFile)> MapLinks = new()
+    {
+        { "gate",    ("Leave camp [E]",     "map1.tmx") },
+        { "hubArea", ("Return to camp [E]", "hub.tmx")  },
+    };
 
     private Vector2 _camera;
     private int     _viewportWidth;
@@ -77,6 +93,7 @@ public sealed class GameScreen : Screen
 
     public override void LoadContent(ContentManager content, GraphicsDevice gd)
     {
+        _content        = content;
         _spriteBatch    = new SpriteBatch(gd);
         _viewportWidth  = gd.Viewport.Width;
         _viewportHeight = gd.Viewport.Height;
@@ -91,28 +108,61 @@ public sealed class GameScreen : Screen
         _pixel = new Texture2D(gd, 1, 1);
         _pixel.SetData(new[] { Color.White });
 
+        _font = content.Load<SpriteFont>("Fonts/Default");
+
         if (DevFlags.DebugColliders)
-        {
             DebugDraw.Initialize(gd);
-            _debugFont = content.Load<SpriteFont>("Fonts/Default");
-        }
+
+        // Slime sprites — 16 × 16 px per frame
+        _slimeIdleSprite = new AnimatedSprite(
+            content.Load<Texture2D>("Sprites/Enemies/sprSlimeIdle"), 16, 16, 8f);
+        _slimeJumpSprite = new AnimatedSprite(
+            content.Load<Texture2D>("Sprites/Enemies/sprSlimeJump"), 16, 16,
+            new float[] { 0.18f, 0.18f, 0.18f, 0.18f, 0.18f, 0.18f, 0.18f });
 
         var mapPath = Path.Combine(AppContext.BaseDirectory, "Content", "Maps", "hub.tmx");
         if (File.Exists(mapPath))
         {
             _map = new TileMapRenderer(mapPath);
             _map.LoadContent(content);
-            _playArea      = _map.PlayArea;
-            _mapColliders  = [.._map.Colliders];
-            _mapPixelWidth  = _map.MapWidthPixels;
-            _mapPixelHeight = _map.MapHeightPixels;
-            if (_map.StartPoint.HasValue)
-                _localPos = _map.StartPoint.Value;
+            ApplyMapData();
         }
 
         WireNetworkEvents(content);
         _network.Connect(ServerHost, ServerPort, _auth.Token!);
     }
+
+    // ── Map helpers ─────────────────────────────────────────────────────────────
+
+    private void ApplyMapData()
+    {
+        if (_map is null) return;
+        _playArea          = _map.PlayArea;
+        _mapColliders      = [.. _map.Colliders];
+        _mapPolyColliders  = [.. _map.PolygonColliders];
+        _mapPixelWidth     = _map.MapWidthPixels;
+        _mapPixelHeight    = _map.MapHeightPixels;
+        _interactableZones = [.. _map.Interactables];
+        if (_map.StartPoint.HasValue)
+            _localPos = _map.StartPoint.Value;
+    }
+
+    private void TransitionToMap(string mapFile)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "Content", "Maps", mapFile);
+        if (!File.Exists(path)) return;
+        _currentMapFile = mapFile;
+        _map = new TileMapRenderer(path);
+        _map.LoadContent(_content);
+        _enemies.Clear();
+        _enemyDirX.Clear();
+        _enemyHealth.Clear();
+        _enemyFlashTimers.Clear();
+        ApplyMapData();
+        UpdateCamera();
+    }
+
+    // ── Network wiring ───────────────────────────────────────────────────────────
 
     private void WireNetworkEvents(ContentManager content)
     {
@@ -145,7 +195,6 @@ public sealed class GameScreen : Screen
 
         _network.PlayerMoved += (id, x, y) =>
         {
-            // Server-authoritative correction for the local player (e.g. pushed by an enemy)
             if (id == _network.LocalId)
             {
                 _localPos = new Vector2(x, y);
@@ -175,11 +224,12 @@ public sealed class GameScreen : Screen
             _enemies.Clear();
             _enemyDirX.Clear();
             _enemyHealth.Clear();
+            if (!EnemiesActive) return;
             for (int i = 0; i < enemies.Length; i++)
             {
                 var e = enemies[i];
-                _enemies[e.Id]    = e;
-                _enemyDirX[e.Id]  = 1f;
+                _enemies[e.Id]   = e;
+                _enemyDirX[e.Id] = 1f;
                 var def = DefaultStats.ForEnemy(e.Type);
                 _enemyHealth[e.Id] = (healths[i], def.MaxHealth);
             }
@@ -187,6 +237,7 @@ public sealed class GameScreen : Screen
 
         _network.EnemyMoved += e =>
         {
+            if (!EnemiesActive) return;
             if (_enemies.TryGetValue(e.Id, out var prev))
             {
                 float dx = e.X - prev.X;
@@ -198,6 +249,7 @@ public sealed class GameScreen : Screen
 
         _network.EnemyDamaged += (e, health) =>
         {
+            if (!EnemiesActive) return;
             _enemies.TryGetValue(e.Id, out var prev);
             float dx = e.X - prev.X;
             if (MathF.Abs(dx) > 0.001f)
@@ -205,11 +257,11 @@ public sealed class GameScreen : Screen
             _enemies[e.Id] = e;
 
             _enemyHealth.TryGetValue(e.Id, out var cur);
-            int maxHealth = cur.maxHealth > 0 ? cur.maxHealth : DefaultStats.ForEnemy(e.Type).MaxHealth;
+            int maxHealth  = cur.maxHealth > 0 ? cur.maxHealth : DefaultStats.ForEnemy(e.Type).MaxHealth;
             int prevHealth = cur.health;
             _enemyHealth[e.Id] = (health, maxHealth);
 
-            if (health < prevHealth) // damage taken (not respawn)
+            if (health < prevHealth)
                 _enemyFlashTimers[e.Id] = FlashDuration;
         };
 
@@ -234,6 +286,8 @@ public sealed class GameScreen : Screen
         _network.PlayerStatsReceived += stats => _localStats = stats;
     }
 
+    // ── Update ───────────────────────────────────────────────────────────────────
+
     public override void Update(GameTime gameTime)
     {
         _network.PollEvents();
@@ -241,8 +295,11 @@ public sealed class GameScreen : Screen
         float dt = (float)gameTime.ElapsedGameTime.TotalSeconds;
         HandleAttack();
         HandleMovement(dt);
+        HandleInteraction();
 
         _localAnimator.Update(dt);
+        _slimeJumpSprite.Update(dt);
+        _slimeIdleSprite.Update(dt);
 
         if (_localFlashTimer > 0f) _localFlashTimer = MathF.Max(0f, _localFlashTimer - dt);
         foreach (var id in _remoteFlashTimers.Keys.ToArray())
@@ -290,15 +347,14 @@ public sealed class GameScreen : Screen
         if (_dashCooldown > 0f)
             _dashCooldown = MathF.Max(0f, _dashCooldown - dt);
 
-        // Trigger dash on Shift just-pressed
         if (!_isDashing && _dashCooldown <= 0f &&
             kb.IsKeyDown(Keys.LeftShift) && !_prevKb.IsKeyDown(Keys.LeftShift))
         {
-            var input    = GetMoveInput(kb);
-            var dashDir  = input != Vector2.Zero ? Vector2.Normalize(input) : _lastMoveDir;
-            _isDashing   = true;
-            _dashTimer   = DashDuration;
-            _dashDir     = dashDir;
+            var input   = GetMoveInput(kb);
+            var dashDir = input != Vector2.Zero ? Vector2.Normalize(input) : _lastMoveDir;
+            _isDashing  = true;
+            _dashTimer  = DashDuration;
+            _dashDir    = dashDir;
             _localAnimator.SetDirection(InferDirection(dashDir.X, dashDir.Y));
             _localAnimator.SetAction(PlayerAction.Jump);
         }
@@ -324,7 +380,6 @@ public sealed class GameScreen : Screen
             return;
         }
 
-        // Normal movement
         var vel = GetMoveInput(kb);
         if (vel != Vector2.Zero)
         {
@@ -344,6 +399,28 @@ public sealed class GameScreen : Screen
         }
     }
 
+    private void HandleInteraction()
+    {
+        _activePrompt    = null;
+        _activeTargetMap = null;
+
+        foreach (var (name, bounds) in _interactableZones)
+        {
+            if (!bounds.Contains((int)_localPos.X, (int)_localPos.Y)) continue;
+            if (!MapLinks.TryGetValue(name, out var link)) continue;
+            _activePrompt    = link.Prompt;
+            _activeTargetMap = link.MapFile;
+            break;
+        }
+
+        if (_activeTargetMap is not null)
+        {
+            var kb = Keyboard.GetState();
+            if (kb.IsKeyDown(Keys.E) && !_prevKb.IsKeyDown(Keys.E))
+                TransitionToMap(_activeTargetMap);
+        }
+    }
+
     private static Vector2 GetMoveInput(KeyboardState kb)
     {
         var v = Vector2.Zero;
@@ -353,6 +430,8 @@ public sealed class GameScreen : Screen
         if (kb.IsKeyDown(Keys.D) || kb.IsKeyDown(Keys.Right)) v.X += 1;
         return v;
     }
+
+    // ── Collision ────────────────────────────────────────────────────────────────
 
     private void ApplyCollision(ref Vector2 pos)
     {
@@ -374,23 +453,22 @@ public sealed class GameScreen : Screen
         }
         foreach (var rect in _mapColliders)
             ResolveRectCollision(ref pos, pr, rect);
+        foreach (var poly in _mapPolyColliders)
+            ResolvePolygonCollision(ref pos, pr, poly);
     }
 
-    // Pushes a circle (pos, radius) out of an axis-aligned rectangle.
     private static void ResolveRectCollision(ref Vector2 pos, float radius, Rectangle rect)
     {
-        // Closest point on rectangle to circle center
         float cx = Math.Clamp(pos.X, rect.Left, rect.Right);
         float cy = Math.Clamp(pos.Y, rect.Top,  rect.Bottom);
         float dx = pos.X - cx;
         float dy = pos.Y - cy;
         float distSq = dx * dx + dy * dy;
 
-        if (distSq >= radius * radius) return; // no overlap
+        if (distSq >= radius * radius) return;
 
         if (distSq < 0.0001f)
         {
-            // Center is inside the rectangle — push out via minimum overlap axis
             float overlapL = pos.X - rect.Left   + radius;
             float overlapR = rect.Right  - pos.X + radius;
             float overlapT = pos.Y - rect.Top    + radius;
@@ -409,6 +487,31 @@ public sealed class GameScreen : Screen
         pos.Y += (dy / dist) * overlap;
     }
 
+    private static void ResolvePolygonCollision(ref Vector2 pos, float radius, Vector2[] polygon)
+    {
+        for (int i = 0; i < polygon.Length; i++)
+        {
+            var a       = polygon[i];
+            var b       = polygon[(i + 1) % polygon.Length];
+            var closest = ClosestPointOnSegment(a, b, pos);
+            var diff    = pos - closest;
+            float dist  = diff.Length();
+            if (dist < radius && dist > 0.0001f)
+                pos += diff / dist * (radius - dist);
+        }
+    }
+
+    private static Vector2 ClosestPointOnSegment(Vector2 a, Vector2 b, Vector2 p)
+    {
+        var ab = b - a;
+        float d = Vector2.Dot(ab, ab);
+        if (d < 0.0001f) return a;
+        float t = Math.Clamp(Vector2.Dot(p - a, ab) / d, 0f, 1f);
+        return a + t * ab;
+    }
+
+    // ── Draw ─────────────────────────────────────────────────────────────────────
+
     public override void Draw(SpriteBatch sb, GraphicsDevice gd)
     {
         gd.Clear(new Color(30, 30, 46));
@@ -416,6 +519,21 @@ public sealed class GameScreen : Screen
 
         _map?.Draw(_spriteBatch, _camera);
 
+        // Enemies
+        foreach (var (id, e) in _enemies)
+        {
+            if (_enemyHealth.TryGetValue(id, out var eh) && eh.health <= 0) continue;
+            var screenPos = new Vector2(e.X, e.Y) - _camera;
+            var tint      = FlashColor(_enemyFlashTimers.GetValueOrDefault(id));
+            var effects   = _enemyDirX.GetValueOrDefault(id, 1f) < 0f
+                            ? SpriteEffects.FlipHorizontally : SpriteEffects.None;
+            _slimeJumpSprite.Draw(_spriteBatch, screenPos, tint, scale: 2f, effects: effects);
+            if (eh.maxHealth > 0)
+                DrawBar(_spriteBatch, screenPos + new Vector2(-15, -20), 30, 4,
+                    (float)eh.health / eh.maxHealth, Color.MediumSeaGreen, new Color(0, 40, 0));
+        }
+
+        // Remote players
         foreach (var (id, p) in _remotePlayers)
             if (_remoteAnimators.TryGetValue(id, out var a))
             {
@@ -427,14 +545,15 @@ public sealed class GameScreen : Screen
                         (float)hp.health / hp.maxHealth, Color.MediumSeaGreen, new Color(0, 40, 0));
             }
 
+        // Local player
         _localAnimator.Draw(_spriteBatch, _localPos - _camera, FlashColor(_localFlashTimer), scale: 2f);
 
+        // Debug overlays
         if (DevFlags.DebugColliders)
         {
             float lr = ColliderRadius.ForCharacter(_auth.CharacterType);
             DebugDraw.Circle(_spriteBatch, _localPos - _camera, lr, Color.LimeGreen);
 
-            // Attack hitbox (shown while actively attacking)
             if (_localAnimator.IsAttacking)
             {
                 var (adx, ady) = DirectionToVec(_localAnimator.CurrentDirection);
@@ -446,19 +565,25 @@ public sealed class GameScreen : Screen
                 DebugDraw.Circle(_spriteBatch, new Vector2(p.X, p.Y) - _camera,
                     ColliderRadius.ForCharacter(p.CharacterType), Color.Yellow);
 
-            // Map objects
+            foreach (var (id, e) in _enemies)
+            {
+                if (_enemyHealth.TryGetValue(id, out var eh) && eh.health <= 0) continue;
+                DebugDraw.Circle(_spriteBatch, new Vector2(e.X, e.Y) - _camera,
+                    ColliderRadius.ForEnemy(e.Type), Color.Magenta);
+            }
+
             DebugDraw.Rect(_spriteBatch, OffsetRect(_playArea), Color.Cyan);
             foreach (var rect in _mapColliders)
                 DebugDraw.Rect(_spriteBatch, OffsetRect(rect), Color.OrangeRed);
-
-            // HUD
-            if (_debugFont is not null)
+            foreach (var poly in _mapPolyColliders)
             {
-                var conn    = _network.IsConnected ? "connected" : "NOT connected";
-                var connClr = _network.IsConnected ? Color.LimeGreen : Color.OrangeRed;
-                _spriteBatch.DrawString(_debugFont, $"server: {conn}", new Vector2(8, 8),  connClr);
-                _spriteBatch.DrawString(_debugFont, $"enemies: {_enemies.Count}", new Vector2(8, 24), Color.White);
+                var offsetPoly = poly.Select(v => v - _camera).ToArray();
+                DebugDraw.Polygon(_spriteBatch, offsetPoly, Color.OrangeRed);
             }
+
+            _spriteBatch.DrawString(_font, $"server: {(_network.IsConnected ? "connected" : "NOT connected")}",
+                new Vector2(8, 8), _network.IsConnected ? Color.LimeGreen : Color.OrangeRed);
+            _spriteBatch.DrawString(_font, $"enemies: {_enemies.Count}", new Vector2(8, 24), Color.White);
         }
 
         // HUD — local player bars (bottom-left)
@@ -472,8 +597,19 @@ public sealed class GameScreen : Screen
             DrawBar(_spriteBatch, new Vector2(10, 575), 80, 8,
                 (float)_localStats.MagicPower / _localStats.MaxMagicPower, Color.DodgerBlue, new Color(0, 0, 60));
 
+        // Interaction prompt (centered, above HUD)
+        if (_activePrompt is not null)
+        {
+            var measure    = _font.MeasureString(_activePrompt);
+            var promptPos  = new Vector2((_viewportWidth - measure.X) / 2f, _viewportHeight * 0.72f);
+            _spriteBatch.DrawString(_font, _activePrompt, promptPos + new Vector2(1, 1), Color.Black * 0.8f);
+            _spriteBatch.DrawString(_font, _activePrompt, promptPos, Color.Yellow);
+        }
+
         _spriteBatch.End();
     }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────────
 
     private void DrawBar(SpriteBatch sb, Vector2 pos, int width, int height,
         float fill, Color filledColor, Color emptyColor)
@@ -507,7 +643,6 @@ public sealed class GameScreen : Screen
     private Rectangle OffsetRect(Rectangle r) =>
         new(r.X - (int)_camera.X, r.Y - (int)_camera.Y, r.Width, r.Height);
 
-    // Produces a red flash: 2 red pulses over FlashDuration, alternating every 0.1 s
     private static Color FlashColor(float timer) =>
         timer > 0f && (int)(timer / 0.1f) % 2 == 1 ? Color.Red : Color.White;
 }

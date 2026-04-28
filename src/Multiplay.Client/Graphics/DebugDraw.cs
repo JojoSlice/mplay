@@ -31,6 +31,12 @@ internal static class DebugDraw
         }
     }
 
+    internal static void Polygon(SpriteBatch sb, Vector2[] vertices, Color color)
+    {
+        for (int i = 0; i < vertices.Length; i++)
+            Line(sb, vertices[i], vertices[(i + 1) % vertices.Length], color);
+    }
+
     internal static void Rect(SpriteBatch sb, Rectangle rect, Color color)
     {
         var tl = new Vector2(rect.Left,  rect.Top);

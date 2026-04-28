@@ -22,5 +22,5 @@ public static class DefaultStats
         _                          => new PlayerStats(100, 100, 10,  5, 100, 100, 50, 50), // Zink
     };
 
-    public static EnemyStats ForEnemy(string? enemyType) => new EnemyStats(40, 40, 8, 2); // Slime
+    public static EnemyStats ForEnemy(string? enemyType) => new EnemyStats(40, 40, 22, 2); // Slime — 22 atk kills Zink in 6 hits
 }

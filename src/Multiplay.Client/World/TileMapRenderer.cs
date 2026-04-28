@@ -28,6 +28,9 @@ public sealed class TileMapRenderer
     /// <summary>Solid rectangles the player cannot walk through.</summary>
     public IReadOnlyList<Rectangle> Colliders { get; private set; } = [];
 
+    /// <summary>Solid polygon colliders (world-space vertices) the player cannot walk through.</summary>
+    public IReadOnlyList<Vector2[]> PolygonColliders { get; private set; } = [];
+
     /// <summary>Interactive zones (name + bounds). Behaviour implemented later.</summary>
     public IReadOnlyList<(string Name, Rectangle Bounds)> Interactables { get; private set; } = [];
 
@@ -74,8 +77,9 @@ public sealed class TileMapRenderer
         // Default: full map bounds
         PlayArea = new Rectangle(0, 0, MapWidthPixels, MapHeightPixels);
 
-        var colliders     = new List<Rectangle>();
-        var interactables = new List<(string, Rectangle)>();
+        var colliders        = new List<Rectangle>();
+        var polygonColliders = new List<Vector2[]>();
+        var interactables    = new List<(string, Rectangle)>();
 
         foreach (var layer in _map.Layers)
         {
@@ -92,7 +96,19 @@ public sealed class TileMapRenderer
                         PlayArea = rect;
                         break;
                     case "collider":
-                        colliders.Add(rect);
+                        if (obj.polygon?.points is { Length: > 1 } pts)
+                        {
+                            int count = pts.Length / 2;
+                            var verts = new Vector2[count];
+                            for (int i = 0; i < count; i++)
+                                verts[i] = new Vector2(obj.x + pts[i * 2],
+                                                       obj.y + pts[i * 2 + 1]);
+                            polygonColliders.Add(verts);
+                        }
+                        else if (obj.width > 0 && obj.height > 0)
+                        {
+                            colliders.Add(rect);
+                        }
                         break;
                     case "interactable":
                         interactables.Add((obj.name ?? string.Empty, rect));
@@ -104,8 +120,9 @@ public sealed class TileMapRenderer
             }
         }
 
-        Colliders     = colliders;
-        Interactables = interactables;
+        Colliders        = colliders;
+        PolygonColliders = polygonColliders;
+        Interactables    = interactables;
     }
 
     // ── Drawing ────────────────────────────────────────────────────────────────
