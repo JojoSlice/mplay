@@ -148,8 +148,8 @@ public sealed class GameServer : IHostedService, INetEventListener
             {
                 Id       = peerId,
                 Name     = displayName,
-                X        = 400f,
-                Y        = 300f,
+                X        = GameLogic.PlayerSpawnX,
+                Y        = GameLogic.PlayerSpawnY,
                 LastSeen = DateTime.UtcNow,
             });
             await db.SaveChangesAsync();

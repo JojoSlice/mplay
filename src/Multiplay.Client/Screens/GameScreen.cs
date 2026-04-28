@@ -30,7 +30,6 @@ public sealed class GameScreen : Screen
 
     private readonly Dictionary<int, EnemyInfo> _enemies    = [];
     private readonly Dictionary<int, float>    _enemyDirX  = []; // +1 right, -1 left
-    private AnimatedSprite? _slimeSprite;
 
     private bool    _isDashing    = false;
     private float   _dashTimer    = 0f;
@@ -52,17 +51,20 @@ public sealed class GameScreen : Screen
     private readonly Dictionary<int, (int health, int maxHealth)> _enemyHealth        = [];
     private Texture2D _pixel = null!;
 
-    // Static reference dummies for checking collider sizes
-    private (CharacterAnimator Anim, Vector2 Pos, string CharType)[] _dummyChars = [];
-    private Vector2[] _dummySlimes = [];
-
     private CharacterAnimator _localAnimator = null!;
     private KeyboardState _prevKb;
 
     private SpriteFont? _debugFont;
 
     private TileMapRenderer? _map;
-    private static readonly string MapPath = "";
+    private Rectangle        _playArea     = new(0, 0, 800, 800);
+    private List<Rectangle>  _mapColliders = [];
+
+    private Vector2 _camera;
+    private int     _viewportWidth;
+    private int     _viewportHeight;
+    private int     _mapPixelWidth;
+    private int     _mapPixelHeight;
 
     public GameScreen(IAuthService auth) : this(auth, new NetworkManager()) { }
 
@@ -75,7 +77,12 @@ public sealed class GameScreen : Screen
 
     public override void LoadContent(ContentManager content, GraphicsDevice gd)
     {
-        _spriteBatch   = new SpriteBatch(gd);
+        _spriteBatch    = new SpriteBatch(gd);
+        _viewportWidth  = gd.Viewport.Width;
+        _viewportHeight = gd.Viewport.Height;
+        _mapPixelWidth  = _viewportWidth;
+        _mapPixelHeight = _viewportHeight;
+
         _localAnimator = CharacterAnimator.Create(
             _auth.CharacterType ?? Shared.CharacterType.Zink);
         _localAnimator.LoadContent(content);
@@ -84,28 +91,23 @@ public sealed class GameScreen : Screen
         _pixel = new Texture2D(gd, 1, 1);
         _pixel.SetData(new[] { Color.White });
 
-        var slimeTex = content.Load<Texture2D>("Sprites/Enemies/sprSlimeJump");
-        _slimeSprite = new AnimatedSprite(slimeTex, frameWidth: 16, frameHeight: 16, fps: 1f / 0.18f);
-
         if (DevFlags.DebugColliders)
         {
             DebugDraw.Initialize(gd);
             _debugFont = content.Load<SpriteFont>("Fonts/Default");
         }
 
-        // One of each character type in a row, then slimes below
-        _dummyChars =
-        [
-            (CreateAnimator(content, CharacterType.Zink),         new Vector2(150, 120), CharacterType.Zink),
-            (CreateAnimator(content, CharacterType.ShieldKnight), new Vector2(300, 120), CharacterType.ShieldKnight),
-            (CreateAnimator(content, CharacterType.SwordKnight),  new Vector2(450, 120), CharacterType.SwordKnight),
-        ];
-        _dummySlimes = [new Vector2(400, 200)];
-
-        if (MapPath != string.Empty)
+        var mapPath = Path.Combine(AppContext.BaseDirectory, "Content", "Maps", "hub.tmx");
+        if (File.Exists(mapPath))
         {
-            _map = new TileMapRenderer(MapPath);
+            _map = new TileMapRenderer(mapPath);
             _map.LoadContent(content);
+            _playArea      = _map.PlayArea;
+            _mapColliders  = [.._map.Colliders];
+            _mapPixelWidth  = _map.MapWidthPixels;
+            _mapPixelHeight = _map.MapHeightPixels;
+            if (_map.StartPoint.HasValue)
+                _localPos = _map.StartPoint.Value;
         }
 
         WireNetworkEvents(content);
@@ -256,10 +258,17 @@ public sealed class GameScreen : Screen
         }
         foreach (var a in _remoteAnimators.Values) a.Update(dt);
 
-        foreach (var (anim, _, _) in _dummyChars) anim.Update(dt);
-        _slimeSprite?.Update(dt);
-
+        UpdateCamera();
         _prevKb = Keyboard.GetState();
+    }
+
+    private void UpdateCamera()
+    {
+        float x = _localPos.X - _viewportWidth  / 2f;
+        float y = _localPos.Y - _viewportHeight / 2f;
+        x = Math.Clamp(x, 0, Math.Max(0, _mapPixelWidth  - _viewportWidth));
+        y = Math.Clamp(y, 0, Math.Max(0, _mapPixelHeight - _viewportHeight));
+        _camera = new Vector2(x, y);
     }
 
     private void HandleAttack()
@@ -306,8 +315,8 @@ public sealed class GameScreen : Screen
             else
             {
                 var newPos = _localPos + _dashDir * (DashSpeed * dt);
-                newPos.X   = Math.Clamp(newPos.X, 0, 800);
-                newPos.Y   = Math.Clamp(newPos.Y, 0, 600);
+                newPos.X   = Math.Clamp(newPos.X, _playArea.Left, _playArea.Right);
+                newPos.Y   = Math.Clamp(newPos.Y, _playArea.Top,  _playArea.Bottom);
                 ApplyCollision(ref newPos);
                 _localPos = newPos;
                 _network.SendMove(_localPos.X, _localPos.Y);
@@ -321,8 +330,8 @@ public sealed class GameScreen : Screen
         {
             _lastMoveDir = Vector2.Normalize(vel);
             var newPos   = _localPos + Vector2.Normalize(vel) * (Speed * dt);
-            newPos.X     = Math.Clamp(newPos.X, 0, 800);
-            newPos.Y     = Math.Clamp(newPos.Y, 0, 600);
+            newPos.X     = Math.Clamp(newPos.X, _playArea.Left, _playArea.Right);
+            newPos.Y     = Math.Clamp(newPos.Y, _playArea.Top,  _playArea.Bottom);
             ApplyCollision(ref newPos);
             _localPos = newPos;
             _localAnimator.SetDirection(InferDirection(vel.X, vel.Y));
@@ -363,6 +372,41 @@ public sealed class GameScreen : Screen
             var (sx, sy) = Collision.Resolve(pos.X, pos.Y, pr, p.X, p.Y, or);
             pos.X += sx; pos.Y += sy;
         }
+        foreach (var rect in _mapColliders)
+            ResolveRectCollision(ref pos, pr, rect);
+    }
+
+    // Pushes a circle (pos, radius) out of an axis-aligned rectangle.
+    private static void ResolveRectCollision(ref Vector2 pos, float radius, Rectangle rect)
+    {
+        // Closest point on rectangle to circle center
+        float cx = Math.Clamp(pos.X, rect.Left, rect.Right);
+        float cy = Math.Clamp(pos.Y, rect.Top,  rect.Bottom);
+        float dx = pos.X - cx;
+        float dy = pos.Y - cy;
+        float distSq = dx * dx + dy * dy;
+
+        if (distSq >= radius * radius) return; // no overlap
+
+        if (distSq < 0.0001f)
+        {
+            // Center is inside the rectangle — push out via minimum overlap axis
+            float overlapL = pos.X - rect.Left   + radius;
+            float overlapR = rect.Right  - pos.X + radius;
+            float overlapT = pos.Y - rect.Top    + radius;
+            float overlapB = rect.Bottom - pos.Y + radius;
+            float min = Math.Min(Math.Min(overlapL, overlapR), Math.Min(overlapT, overlapB));
+            if      (min == overlapL) pos.X = rect.Left   - radius;
+            else if (min == overlapR) pos.X = rect.Right  + radius;
+            else if (min == overlapT) pos.Y = rect.Top    - radius;
+            else                      pos.Y = rect.Bottom + radius;
+            return;
+        }
+
+        float dist    = MathF.Sqrt(distSq);
+        float overlap = radius - dist;
+        pos.X += (dx / dist) * overlap;
+        pos.Y += (dy / dist) * overlap;
     }
 
     public override void Draw(SpriteBatch sb, GraphicsDevice gd)
@@ -370,69 +414,42 @@ public sealed class GameScreen : Screen
         gd.Clear(new Color(30, 30, 46));
         _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
 
-        _map?.Draw(_spriteBatch);
+        _map?.Draw(_spriteBatch, _camera);
 
         foreach (var (id, p) in _remotePlayers)
             if (_remoteAnimators.TryGetValue(id, out var a))
             {
+                var screenPos = new Vector2(p.X, p.Y) - _camera;
                 var tint = FlashColor(_remoteFlashTimers.GetValueOrDefault(id));
-                a.Draw(_spriteBatch, new Vector2(p.X, p.Y), tint, scale: 2f);
+                a.Draw(_spriteBatch, screenPos, tint, scale: 2f);
                 if (_remotePlayerHealth.TryGetValue(id, out var hp) && hp.maxHealth > 0)
-                    DrawBar(_spriteBatch, new Vector2(p.X - 15, p.Y - 30), 30, 4,
+                    DrawBar(_spriteBatch, screenPos + new Vector2(-15, -30), 30, 4,
                         (float)hp.health / hp.maxHealth, Color.MediumSeaGreen, new Color(0, 40, 0));
             }
 
-        _localAnimator.Draw(_spriteBatch, _localPos, FlashColor(_localFlashTimer), scale: 2f);
-
-        if (_slimeSprite is not null)
-            foreach (var e in _enemies.Values)
-            {
-                if (_enemyHealth.TryGetValue(e.Id, out var ehp) && ehp.health <= 0) continue;
-
-                var fx = _enemyDirX.GetValueOrDefault(e.Id, 1f) < 0
-                    ? SpriteEffects.FlipHorizontally
-                    : SpriteEffects.None;
-                var tint = FlashColor(_enemyFlashTimers.GetValueOrDefault(e.Id));
-                _slimeSprite.Draw(_spriteBatch, new Vector2(e.X, e.Y), tint, scale: 2f, fx);
-
-                if (ehp.maxHealth > 0)
-                    DrawBar(_spriteBatch, new Vector2(e.X - 10, e.Y - 20), 20, 3,
-                        (float)ehp.health / ehp.maxHealth, Color.Crimson, new Color(60, 0, 0));
-            }
-
-        // Reference dummies
-        foreach (var (anim, pos, _) in _dummyChars)
-            anim.Draw(_spriteBatch, pos, Color.White, scale: 2f);
-        if (_slimeSprite is not null)
-            foreach (var pos in _dummySlimes)
-                _slimeSprite.Draw(_spriteBatch, pos, Color.White, scale: 2f);
+        _localAnimator.Draw(_spriteBatch, _localPos - _camera, FlashColor(_localFlashTimer), scale: 2f);
 
         if (DevFlags.DebugColliders)
         {
             float lr = ColliderRadius.ForCharacter(_auth.CharacterType);
-            DebugDraw.Circle(_spriteBatch, _localPos, lr, Color.LimeGreen);
+            DebugDraw.Circle(_spriteBatch, _localPos - _camera, lr, Color.LimeGreen);
 
             // Attack hitbox (shown while actively attacking)
             if (_localAnimator.IsAttacking)
             {
                 var (adx, ady) = DirectionToVec(_localAnimator.CurrentDirection);
-                var attackCenter = _localPos + new Vector2(adx, ady) * AttackOffset;
+                var attackCenter = _localPos - _camera + new Vector2(adx, ady) * AttackOffset;
                 DebugDraw.Circle(_spriteBatch, attackCenter, 20f, Color.Orange);
             }
 
             foreach (var p in _remotePlayers.Values)
-                DebugDraw.Circle(_spriteBatch, new Vector2(p.X, p.Y),
+                DebugDraw.Circle(_spriteBatch, new Vector2(p.X, p.Y) - _camera,
                     ColliderRadius.ForCharacter(p.CharacterType), Color.Yellow);
 
-            foreach (var e in _enemies.Values)
-                DebugDraw.Circle(_spriteBatch, new Vector2(e.X, e.Y),
-                    ColliderRadius.ForEnemy(e.Type), Color.Red);
-
-            // Dummy colliders
-            foreach (var (_, pos, charType) in _dummyChars)
-                DebugDraw.Circle(_spriteBatch, pos, ColliderRadius.ForCharacter(charType), Color.LimeGreen);
-            foreach (var pos in _dummySlimes)
-                DebugDraw.Circle(_spriteBatch, pos, ColliderRadius.ForEnemy(EnemyType.Slime), Color.Red);
+            // Map objects
+            DebugDraw.Rect(_spriteBatch, OffsetRect(_playArea), Color.Cyan);
+            foreach (var rect in _mapColliders)
+                DebugDraw.Rect(_spriteBatch, OffsetRect(rect), Color.OrangeRed);
 
             // HUD
             if (_debugFont is not null)
@@ -486,6 +503,9 @@ public sealed class GameScreen : Screen
         Direction.E => ( 1f,  0f),
         _           => (-1f,  0f),
     };
+
+    private Rectangle OffsetRect(Rectangle r) =>
+        new(r.X - (int)_camera.X, r.Y - (int)_camera.Y, r.Width, r.Height);
 
     // Produces a red flash: 2 red pulses over FlashDuration, alternating every 0.1 s
     private static Color FlashColor(float timer) =>

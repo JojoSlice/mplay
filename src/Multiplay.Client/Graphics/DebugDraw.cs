@@ -31,6 +31,18 @@ internal static class DebugDraw
         }
     }
 
+    internal static void Rect(SpriteBatch sb, Rectangle rect, Color color)
+    {
+        var tl = new Vector2(rect.Left,  rect.Top);
+        var tr = new Vector2(rect.Right, rect.Top);
+        var bl = new Vector2(rect.Left,  rect.Bottom);
+        var br = new Vector2(rect.Right, rect.Bottom);
+        Line(sb, tl, tr, color);
+        Line(sb, tr, br, color);
+        Line(sb, br, bl, color);
+        Line(sb, bl, tl, color);
+    }
+
     private static void Line(SpriteBatch sb, Vector2 from, Vector2 to, Color color)
     {
         if (_pixel is null) return;

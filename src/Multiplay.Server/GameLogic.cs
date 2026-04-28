@@ -15,6 +15,10 @@ public sealed class GameLogic
     private static readonly (float X, float Y, float DirX)[] SpawnPoints =
         [(400f, 340f, 1f)];
 
+    // Center of the inn startPoint object in hub.tmx (x=513 y=640 w=79 h=33)
+    internal const float PlayerSpawnX = 552.5f;
+    internal const float PlayerSpawnY = 656.5f;
+
     private const float EnemyMaxSpeed    = 70f;
     private const float EnemyMinSpeed    = 10f;
     private const float MapMinX          = 14f;
@@ -60,7 +64,7 @@ public sealed class GameLogic
 
     public void OnPlayerConnected(int peerId, string displayName, string characterType)
     {
-        var player = new PlayerInfo(peerId, displayName, 400f, 300f, characterType);
+        var player = new PlayerInfo(peerId, displayName, PlayerSpawnX, PlayerSpawnY, characterType);
         _state.Add(player);
 
         var stats = DefaultStats.ForCharacter(characterType);
