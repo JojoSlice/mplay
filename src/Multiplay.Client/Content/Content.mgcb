@@ -372,6 +372,54 @@
 /processorParam:TextureFormat=Color
 /build:Sprites/Zink/sprZinkClassicSwordAttackW.png
 
+#begin Sprites/Zink/sprZinkWeaponsClassicSwordAttackE.png
+/importer:TextureImporter
+/processor:TextureProcessor
+/processorParam:ColorKeyColor=255,0,255,255
+/processorParam:ColorKeyEnabled=True
+/processorParam:GenerateMipmaps=False
+/processorParam:PremultiplyAlpha=True
+/processorParam:ResizeToPowerOfTwo=False
+/processorParam:MakeSquare=False
+/processorParam:TextureFormat=Color
+/build:Sprites/Zink/sprZinkWeaponsClassicSwordAttackE.png
+
+#begin Sprites/Zink/sprZinkWeaponsClassicSwordAttackN.png
+/importer:TextureImporter
+/processor:TextureProcessor
+/processorParam:ColorKeyColor=255,0,255,255
+/processorParam:ColorKeyEnabled=True
+/processorParam:GenerateMipmaps=False
+/processorParam:PremultiplyAlpha=True
+/processorParam:ResizeToPowerOfTwo=False
+/processorParam:MakeSquare=False
+/processorParam:TextureFormat=Color
+/build:Sprites/Zink/sprZinkWeaponsClassicSwordAttackN.png
+
+#begin Sprites/Zink/sprZinkWeaponsClassicSwordAttackS.png
+/importer:TextureImporter
+/processor:TextureProcessor
+/processorParam:ColorKeyColor=255,0,255,255
+/processorParam:ColorKeyEnabled=True
+/processorParam:GenerateMipmaps=False
+/processorParam:PremultiplyAlpha=True
+/processorParam:ResizeToPowerOfTwo=False
+/processorParam:MakeSquare=False
+/processorParam:TextureFormat=Color
+/build:Sprites/Zink/sprZinkWeaponsClassicSwordAttackS.png
+
+#begin Sprites/Zink/sprZinkWeaponsClassicSwordAttackW.png
+/importer:TextureImporter
+/processor:TextureProcessor
+/processorParam:ColorKeyColor=255,0,255,255
+/processorParam:ColorKeyEnabled=True
+/processorParam:GenerateMipmaps=False
+/processorParam:PremultiplyAlpha=True
+/processorParam:ResizeToPowerOfTwo=False
+/processorParam:MakeSquare=False
+/processorParam:TextureFormat=Color
+/build:Sprites/Zink/sprZinkWeaponsClassicSwordAttackW.png
+
 #begin Sprites/Zink/sprZinkDeath.png
 /importer:TextureImporter
 /processor:TextureProcessor

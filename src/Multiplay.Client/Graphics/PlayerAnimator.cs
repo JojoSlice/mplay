@@ -34,7 +34,7 @@ public sealed class ZinkAnimator : CharacterAnimator
     public override void LoadContent(ContentManager content)
     {
         Load(content, PlayerAction.Walk,               "Walk",               fps: 8);
-        Load(content, PlayerAction.SwordAttack,        "SwordAttack",        fps: 12);
+        Load(content, PlayerAction.SwordAttack,        "WeaponsClassicSwordAttack", fps: 12);
         Load(content, PlayerAction.ClassicSwordAttack, "ClassicSwordAttack", fps: 12);
         Load(content, PlayerAction.BowAttack,          "BowAttack",          fps: 10);
         Load(content, PlayerAction.WandAttack,         "WandAttack",         fps: 10);
