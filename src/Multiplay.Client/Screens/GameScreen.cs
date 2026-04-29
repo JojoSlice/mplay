@@ -64,6 +64,7 @@ public sealed class GameScreen : Screen
 
     private AnimatedSprite _slimeJumpSprite    = null!;
     private AnimatedSprite _bunnyNpcSprite     = null!;
+    private Texture2D      _bunnyPortrait      = null!;
 
     // Bottom-right corner of the inn startPoint (hub.tmx: x=513,y=640,w=79,h=33)
     private static readonly Vector2 BunnyNpcPos = new(582f, 658f);
@@ -151,6 +152,7 @@ public sealed class GameScreen : Screen
 
         _bunnyNpcSprite = new AnimatedSprite(
             content.Load<Texture2D>("Sprites/NPCs/sprBunnyGirlSearch"), 16, 24, fps: 4f);
+        _bunnyPortrait = content.Load<Texture2D>("Dialog/bunnyGirl");
 
         var mapPath = Path.Combine(AppContext.BaseDirectory, "Content", "Maps", "hub.tmx");
         _map = new TileMapRenderer(mapPath);
@@ -513,31 +515,35 @@ public sealed class GameScreen : Screen
                     || (kb.IsKeyDown(Keys.Enter)  && !_prevKb.IsKeyDown(Keys.Enter));
         if (confirm)
         {
-            int choice        = _dialog.SelectedIndex;
+            // Options.Length == 0 means a pure message — just dismiss, no choice callback
+            int choice        = _dialog.Options.Length > 0 ? _dialog.SelectedIndex : -1;
             _dialog           = null;
             _dialogJustClosed = true;
-            OnBunnyChoice(choice);
+            if (choice >= 0) OnBunnyChoice(choice);
         }
     }
 
     private void OpenBunnyDialog()
     {
+        string body = _questState switch
+        {
+            QuestState.None        => "Oh. Another wanderer.\nWhat do you want?",
+            QuestState.Active      => "Still here? You haven't proven yourself yet.\nGo kill the slimes.",
+            QuestState.ReadyToTurn => "Hm. You actually did it.\nI'm mildly surprised.",
+            _                      => "",
+        };
+        string[] options = _questState switch
+        {
+            QuestState.None        => ["Talk", "Leave"],
+            QuestState.ReadyToTurn => ["Collect Reward", "Leave"],
+            _                      => ["Leave"],
+        };
         _dialog = new DialogBox
         {
             SpeakerName = "BunnyGirl",
-            BodyText    = _questState switch
-            {
-                QuestState.None        => "The slimes have been terrorizing us!\nCan you help?",
-                QuestState.Active      => "Please keep fighting!\nWe need you.",
-                QuestState.ReadyToTurn => "You did it! Thank you so much!",
-                _                      => "",
-            },
-            Options = _questState switch
-            {
-                QuestState.None        => ["Talk", "Leave"],
-                QuestState.ReadyToTurn => ["Collect Reward", "Leave"],
-                _                      => ["Leave"],
-            },
+            Portrait    = _bunnyPortrait,
+            BodyText    = body,
+            Options     = options,
         };
         _dialog.Reset();
     }
@@ -549,11 +555,33 @@ public sealed class GameScreen : Screen
             case QuestState.None when choice == 0:          // Talk
                 _questState     = QuestState.Active;
                 _questKillCount = 0;
+                ShowBunnyMessage("Ugh. Fine. There are slimes everywhere.\nKill 10 of them before you even\nthink about talking to me again.");
+                break;
+            case QuestState.None:                           // Leave
+                ShowBunnyMessage("Good. I didn't want to talk\nto you anyway. Bye.");
+                break;
+            case QuestState.Active:                         // Leave
+                ShowBunnyMessage("Not done yet. Bye.");
                 break;
             case QuestState.ReadyToTurn when choice == 0:  // Collect Reward
-                _questState = QuestState.None;              // placeholder — flesh out later
+                _questState = QuestState.None;
+                ShowBunnyMessage("Whatever. Here.\nDon't make it a habit.");
+                break;
+            case QuestState.ReadyToTurn:                    // Leave
+                ShowBunnyMessage("You came all the way back\njust to leave? Pathetic. Bye.");
                 break;
         }
+    }
+
+    private void ShowBunnyMessage(string text)
+    {
+        _dialog = new DialogBox
+        {
+            SpeakerName = "BunnyGirl",
+            Portrait    = _bunnyPortrait,
+            BodyText    = text,
+            Options     = [],
+        };
     }
 
     private static Vector2 GetMoveInput(KeyboardState kb)

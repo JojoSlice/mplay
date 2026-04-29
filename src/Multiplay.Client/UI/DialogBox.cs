@@ -10,15 +10,19 @@ namespace Multiplay.Client.UI;
 /// </summary>
 public sealed class DialogBox
 {
-    private const int BoxW       = 500;
-    private const int BoxH       = 160;
-    private const int Padding    = 12;
-    private const int TabH       = 22;
+    private const int BoxW        = 500;
+    private const int BoxH        = 160;
+    private const int Padding     = 12;
+    private const int TabH        = 22;
+    private const int PortraitSize = 120;  // square drawn size
+    private const int PortraitPad  = 8;
 
-    public string?  SpeakerName   { get; set; }
-    public string   BodyText      { get; set; } = "";
-    public string[] Options       { get; set; } = [];
-    public int      SelectedIndex { get; private set; }
+    public string?   SpeakerName   { get; set; }
+    public string    BodyText      { get; set; } = "";
+    public string[]  Options       { get; set; } = [];
+    public int       SelectedIndex { get; private set; }
+    /// <summary>Optional portrait drawn on the left of the dialog box.</summary>
+    public Texture2D? Portrait     { get; set; }
 
     public void SelectPrev() => SelectedIndex = Math.Max(0, SelectedIndex - 1);
     public void SelectNext() => SelectedIndex = Math.Min(Options.Length - 1, SelectedIndex + 1);
@@ -36,12 +40,19 @@ public sealed class DialogBox
 
         // Background
         sb.Draw(pixel, new Rectangle(boxX, boxY, BoxW, BoxH), bg);
-
-        // Border (2 px)
         DrawBorder(sb, pixel, new Rectangle(boxX, boxY, BoxW, BoxH), border, 2);
 
-        int textX = boxX + Padding;
-        int y     = boxY + Padding;
+        // Portrait (drawn flush against the left edge, vertically centred in the box)
+        int contentX = boxX + Padding;
+        if (Portrait is not null)
+        {
+            int px = boxX + BoxW + PortraitPad;
+            int py = boxY + (BoxH - PortraitSize) / 2;
+            sb.Draw(pixel, new Rectangle(px - 2, py - 2, PortraitSize + 4, PortraitSize + 4), border);
+            sb.Draw(Portrait, new Rectangle(px, py, PortraitSize, PortraitSize), Color.White);
+        }
+
+        int y = boxY + Padding;
 
         // Speaker name tab
         if (!string.IsNullOrEmpty(SpeakerName))
@@ -58,7 +69,7 @@ public sealed class DialogBox
         // Body text (supports \n)
         if (!string.IsNullOrEmpty(BodyText))
         {
-            sb.DrawString(font, BodyText, new Vector2(textX, y), new Color(200, 200, 220));
+            sb.DrawString(font, BodyText, new Vector2(contentX, y), new Color(200, 200, 220));
             y += (int)(font.LineSpacing * (BodyText.Count(c => c == '\n') + 1)) + 8;
         }
 
@@ -66,14 +77,25 @@ public sealed class DialogBox
         sb.Draw(pixel, new Rectangle(boxX + Padding, y, BoxW - Padding * 2, 1), border);
         y += 8;
 
-        // Options
-        foreach (var (opt, i) in Options.Select((o, i) => (o, i)))
+        if (Options.Length == 0)
         {
-            bool selected = i == SelectedIndex;
-            string line   = selected ? $"  > {opt}" : $"    {opt}";
-            sb.DrawString(font, line, new Vector2(textX, y),
-                selected ? Color.Yellow : Color.LightGray);
-            y += font.LineSpacing + 2;
+            // Pure message — show a dismiss hint in the bottom-right corner
+            const string hint = "[E]";
+            var hintSize = font.MeasureString(hint);
+            sb.DrawString(font, hint,
+                new Vector2(boxX + BoxW - Padding - hintSize.X, boxY + BoxH - Padding - hintSize.Y),
+                new Color(140, 140, 180));
+        }
+        else
+        {
+            foreach (var (opt, i) in Options.Select((o, i) => (o, i)))
+            {
+                bool selected = i == SelectedIndex;
+                string line   = selected ? $"  > {opt}" : $"    {opt}";
+                sb.DrawString(font, line, new Vector2(contentX, y),
+                    selected ? Color.Yellow : Color.LightGray);
+                y += font.LineSpacing + 2;
+            }
         }
     }
 
