@@ -189,12 +189,15 @@ public sealed class GameLogic
         float cx = attacker.X + dirX * AttackOffset;
         float cy = attacker.Y + dirY * AttackOffset;
 
+        bool hitAny = false;
         for (int i = 0; i < _enemies.Length; i++)
         {
             var e = _enemies[i];
             if (e.IsDead) continue;
             if (!Collision.Overlaps(cx, cy, AttackRadius, e.Info.X, e.Info.Y,
                     ColliderRadius.ForEnemy(e.Info.Type))) continue;
+
+            hitAny = true;
 
             var (nx, ny) = _combat.Knockback(cx, cy, e.Info.X, e.Info.Y,
                 EnemyKnockback, MapMinX, MapMaxX, MapMinY, MapMaxY);
@@ -212,6 +215,13 @@ public sealed class GameLogic
             ew.WriteEnemyInfo(_enemies[i].Info);
             ew.Put(newHealth);
             _broadcaster.Broadcast(ew, DeliveryMethod.ReliableOrdered);
+        }
+
+        if (!hitAny)
+        {
+            var mw = new NetDataWriter();
+            mw.Put((byte)PacketType.AttackMissed);
+            _broadcaster.SendTo(peerId, mw, DeliveryMethod.ReliableOrdered);
         }
     }
 

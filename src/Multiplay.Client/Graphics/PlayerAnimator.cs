@@ -19,13 +19,17 @@ public sealed class ZinkAnimator : CharacterAnimator
     private bool _isIdle;
     private bool _isAttacking;
 
-    private Direction    _currentDirection = Direction.S;
-    private PlayerAction _currentAction    = PlayerAction.Walk;
+    private Direction    _currentDirection  = Direction.S;
+    private PlayerAction _currentAction     = PlayerAction.Walk;
+    private float        _attackHoldSeconds = 0f;
 
     public override Direction CurrentDirection => _currentDirection;
     public PlayerAction       CurrentAction    => _currentAction;
 
     public override bool IsAttacking => _isAttacking;
+
+    public override void HoldAttackFrame(float seconds) =>
+        _attackHoldSeconds = MathF.Max(_attackHoldSeconds, seconds);
 
     public override void LoadContent(ContentManager content)
     {
@@ -108,10 +112,14 @@ public sealed class ZinkAnimator : CharacterAnimator
     public override void Update(float deltaSeconds)
     {
         if (_isIdle) return;
+
+        if (_attackHoldSeconds > 0f)
+            _attackHoldSeconds = MathF.Max(0f, _attackHoldSeconds - deltaSeconds);
+
         _active?.Update(deltaSeconds);
 
-        // Return to walk once the attack animation finishes
-        if (_isAttacking && (_active?.IsFinished ?? false))
+        // Return to walk once the attack animation finishes AND any miss-hold expires
+        if (_isAttacking && (_active?.IsFinished ?? false) && _attackHoldSeconds <= 0f)
         {
             _isAttacking   = false;
             _currentAction = PlayerAction.Walk;

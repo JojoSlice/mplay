@@ -32,6 +32,7 @@ public sealed class NetworkManager : INetworkManager, INetEventListener
 
     public event Action<int, float, float, int>? PlayerDamaged;
     public event Action<PlayerStats>?            PlayerStatsReceived;
+    public event Action?                         AttackMissed;
 
     public NetworkManager()
     {
@@ -130,6 +131,10 @@ public sealed class NetworkManager : INetworkManager, INetEventListener
 
             case PacketType.PlayerStats:
                 PlayerStatsReceived?.Invoke(reader.ReadPlayerStats());
+                break;
+
+            case PacketType.AttackMissed:
+                AttackMissed?.Invoke();
                 break;
         }
     }

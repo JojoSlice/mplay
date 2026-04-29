@@ -20,6 +20,13 @@ public abstract class CharacterAnimator
     /// <summary>True while a one-shot attack animation is playing.</summary>
     public virtual bool IsAttacking => false;
 
+    /// <summary>
+    /// Hold the last attack frame for <paramref name="seconds"/> after the animation finishes,
+    /// keeping <see cref="IsAttacking"/> true and blocking movement.
+    /// No-op for animators that do not support attack animations.
+    /// </summary>
+    public virtual void HoldAttackFrame(float seconds) { }
+
     /// <summary>The direction the character is currently facing.</summary>
     public virtual Direction CurrentDirection => Direction.S;
 

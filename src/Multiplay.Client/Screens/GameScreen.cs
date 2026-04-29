@@ -39,9 +39,15 @@ public sealed class GameScreen : Screen
     private Vector2 _dashDir      = new(0f, 1f);
     private Vector2 _lastMoveDir  = new(0f, 1f);
 
-    private const float DashSpeed    = 600f;
-    private const float DashDuration = 0.18f;
-    private const float DashCooldown = 0.7f;
+    private const float DashSpeed          = 600f;
+    private const float DashDuration       = 0.18f;
+    private const float DashCooldown       = 0.7f;
+    private const int   DashStaminaCost    = 30;
+    private const float StaminaRegenDelay  = 3f;   // seconds after last use before regen starts
+    private const float StaminaRegenRate   = 10f;  // stamina per second
+
+    private float _staminaF;           // float-precision stamina (synced to _localStats.Stamina for display)
+    private float _staminaRegenCooldown = 0f;
 
     private float _localFlashTimer;
     private readonly Dictionary<int, float> _remoteFlashTimers = [];
@@ -110,6 +116,7 @@ public sealed class GameScreen : Screen
             _auth.CharacterType ?? Shared.CharacterType.Zink);
         _localAnimator.LoadContent(content);
         _localStats = DefaultStats.ForCharacter(_auth.CharacterType);
+        _staminaF   = _localStats.Stamina;
 
         _pixel = new Texture2D(gd, 1, 1);
         _pixel.SetData(new[] { Color.White });
@@ -287,7 +294,9 @@ public sealed class GameScreen : Screen
             }
         };
 
-        _network.PlayerStatsReceived += stats => _localStats = stats;
+        _network.PlayerStatsReceived += stats => { _localStats = stats; _staminaF = stats.Stamina; };
+
+        _network.AttackMissed += () => _localAnimator.HoldAttackFrame(0.3f);
     }
 
     // ── Update ───────────────────────────────────────────────────────────────────
@@ -306,6 +315,15 @@ public sealed class GameScreen : Screen
         _slimeIdleSprite.Update(dt);
 
         if (_localFlashTimer > 0f) _localFlashTimer = MathF.Max(0f, _localFlashTimer - dt);
+
+        // Stamina regen: delayed start, 10/s after the delay
+        if (_staminaRegenCooldown > 0f)
+            _staminaRegenCooldown = MathF.Max(0f, _staminaRegenCooldown - dt);
+        else if (_staminaF < _localStats.MaxStamina)
+        {
+            _staminaF = MathF.Min(_localStats.MaxStamina, _staminaF + StaminaRegenRate * dt);
+            _localStats = _localStats with { Stamina = (int)_staminaF };
+        }
         foreach (var id in _remoteFlashTimers.Keys.ToArray())
             _remoteFlashTimers[id] = MathF.Max(0f, _remoteFlashTimers[id] - dt);
         foreach (var id in _enemyFlashTimers.Keys.ToArray())
@@ -352,8 +370,13 @@ public sealed class GameScreen : Screen
             _dashCooldown = MathF.Max(0f, _dashCooldown - dt);
 
         if (!_isDashing && _dashCooldown <= 0f &&
+            _staminaF >= DashStaminaCost &&
             kb.IsKeyDown(Keys.LeftShift) && !_prevKb.IsKeyDown(Keys.LeftShift))
         {
+            _staminaF            -= DashStaminaCost;
+            _staminaRegenCooldown = StaminaRegenDelay;
+            _localStats           = _localStats with { Stamina = (int)_staminaF };
+
             var input   = GetMoveInput(kb);
             var dashDir = input != Vector2.Zero ? Vector2.Normalize(input) : _lastMoveDir;
             _isDashing  = true;
