@@ -5,6 +5,7 @@ using Microsoft.Xna.Framework.Input;
 using Multiplay.Client.Graphics;
 using Multiplay.Client.Network;
 using Multiplay.Client.Services;
+using Multiplay.Client.UI;
 using Multiplay.Client.World;
 using Multiplay.Shared;
 
@@ -78,8 +79,20 @@ public sealed class GameScreen : Screen
 
     private string? _activePrompt;
     private string? _activeTargetZone;
+    private string? _activeNpc;
     private string  _currentZone  = Zone.Hub;
     private bool    EnemiesActive => _currentZone == Zone.Map1;
+
+    // ── Dialog ───────────────────────────────────────────────────────────────────
+    private DialogBox? _dialog;
+    private bool       _dialogJustClosed;   // prevents HandleInteraction consuming the same key press
+    private const float BunnyTalkRadius = 50f;
+
+    // ── Quest ────────────────────────────────────────────────────────────────────
+    private enum QuestState { None, Active, ReadyToTurn }
+    private QuestState _questState    = QuestState.None;
+    private int        _questKillCount = 0;
+    private const int  QuestKillTarget  = 10;
 
     private static readonly Dictionary<string, string> ZoneToMapFile = new()
     {
@@ -300,7 +313,18 @@ public sealed class GameScreen : Screen
             }
         };
 
-        _network.PlayerStatsReceived += stats => { _localStats = stats; _staminaF = stats.Stamina; };
+        _network.PlayerStatsReceived += stats =>
+        {
+            bool wasKill = stats.Xp > _localStats.Xp || stats.Level > _localStats.Level;
+            _localStats  = stats;
+            _staminaF    = stats.Stamina;
+            if (wasKill && _questState == QuestState.Active && _currentZone == Zone.Map1)
+            {
+                _questKillCount++;
+                if (_questKillCount >= QuestKillTarget)
+                    _questState = QuestState.ReadyToTurn;
+            }
+        };
 
         _network.AttackMissed     += () => _localAnimator.HoldAttackFrame(0.8f);
         _network.PlayerRespawned  += () => TransitionToMap(Zone.Hub);
@@ -313,6 +337,9 @@ public sealed class GameScreen : Screen
         _network.PollEvents();
 
         float dt = (float)gameTime.ElapsedGameTime.TotalSeconds;
+        var kb = Keyboard.GetState();
+        _dialogJustClosed = false;
+        HandleDialog(kb);
         HandleAttack();
         HandleMovement(dt);
         HandleInteraction();
@@ -365,6 +392,7 @@ public sealed class GameScreen : Screen
 
     private void HandleAttack()
     {
+        if (_dialog != null) return;
         var kb = Keyboard.GetState();
         if (!_localAnimator.IsAttacking && !_isDashing && kb.IsKeyDown(Keys.H))
         {
@@ -376,6 +404,7 @@ public sealed class GameScreen : Screen
 
     private void HandleMovement(float dt)
     {
+        if (_dialog != null) return;
         if (_localAnimator.IsAttacking) return;
 
         var kb = Keyboard.GetState();
@@ -441,8 +470,11 @@ public sealed class GameScreen : Screen
 
     private void HandleInteraction()
     {
-        _activePrompt      = null;
-        _activeTargetZone  = null;
+        if (_dialog != null || _dialogJustClosed) return;
+
+        _activePrompt     = null;
+        _activeTargetZone = null;
+        _activeNpc        = null;
 
         foreach (var (name, bounds) in _interactableZones)
         {
@@ -453,11 +485,74 @@ public sealed class GameScreen : Screen
             break;
         }
 
-        if (_activeTargetZone is not null)
+        // BunnyGirl proximity (hub only)
+        if (_currentZone == Zone.Hub &&
+            Vector2.Distance(_localPos, BunnyNpcPos) <= BunnyTalkRadius)
         {
-            var kb = Keyboard.GetState();
-            if (kb.IsKeyDown(Keys.E) && !_prevKb.IsKeyDown(Keys.E))
-                TransitionToMap(_activeTargetZone);
+            _activePrompt = "Talk [E]";
+            _activeNpc    = "bunnygirl";
+        }
+
+        var kb = Keyboard.GetState();
+        bool ePressed = kb.IsKeyDown(Keys.E) && !_prevKb.IsKeyDown(Keys.E);
+        if (ePressed)
+        {
+            if (_activeTargetZone is not null) TransitionToMap(_activeTargetZone);
+            else if (_activeNpc == "bunnygirl")   OpenBunnyDialog();
+        }
+    }
+
+    private void HandleDialog(KeyboardState kb)
+    {
+        if (_dialog == null) return;
+        if (kb.IsKeyDown(Keys.W) && !_prevKb.IsKeyDown(Keys.W)) _dialog.SelectPrev();
+        if (kb.IsKeyDown(Keys.S) && !_prevKb.IsKeyDown(Keys.S)) _dialog.SelectNext();
+
+        bool confirm = (kb.IsKeyDown(Keys.E)     && !_prevKb.IsKeyDown(Keys.E))
+                    || (kb.IsKeyDown(Keys.Space)  && !_prevKb.IsKeyDown(Keys.Space))
+                    || (kb.IsKeyDown(Keys.Enter)  && !_prevKb.IsKeyDown(Keys.Enter));
+        if (confirm)
+        {
+            int choice        = _dialog.SelectedIndex;
+            _dialog           = null;
+            _dialogJustClosed = true;
+            OnBunnyChoice(choice);
+        }
+    }
+
+    private void OpenBunnyDialog()
+    {
+        _dialog = new DialogBox
+        {
+            SpeakerName = "BunnyGirl",
+            BodyText    = _questState switch
+            {
+                QuestState.None        => "The slimes have been terrorizing us!\nCan you help?",
+                QuestState.Active      => "Please keep fighting!\nWe need you.",
+                QuestState.ReadyToTurn => "You did it! Thank you so much!",
+                _                      => "",
+            },
+            Options = _questState switch
+            {
+                QuestState.None        => ["Talk", "Leave"],
+                QuestState.ReadyToTurn => ["Collect Reward", "Leave"],
+                _                      => ["Leave"],
+            },
+        };
+        _dialog.Reset();
+    }
+
+    private void OnBunnyChoice(int choice)
+    {
+        switch (_questState)
+        {
+            case QuestState.None when choice == 0:          // Talk
+                _questState     = QuestState.Active;
+                _questKillCount = 0;
+                break;
+            case QuestState.ReadyToTurn when choice == 0:  // Collect Reward
+                _questState = QuestState.None;              // placeholder — flesh out later
+                break;
         }
     }
 
@@ -632,6 +727,22 @@ public sealed class GameScreen : Screen
             _spriteBatch.DrawString(_font, _activePrompt, promptPos, Color.Yellow);
         }
 
+        // Quest HUD (right side)
+        if (_questState != QuestState.None)
+        {
+            const int qw = 200, qh = 52, qx_pad = 10, qy = 10;
+            int qx = _viewportWidth - qw - qx_pad;
+            _spriteBatch.Draw(_pixel, new Rectangle(qx, qy, qw, qh), new Color(20, 20, 40));
+            DrawBorderRect(_spriteBatch, new Rectangle(qx, qy, qw, qh), new Color(120, 120, 180), 2);
+            _spriteBatch.DrawString(_font, "Quest: Slay Slimes",
+                new Vector2(qx + 8, qy + 6), new Color(220, 200, 100));
+            string line2 = _questState == QuestState.ReadyToTurn
+                ? "Return to BunnyGirl!"
+                : $"Slimes: {_questKillCount} / {QuestKillTarget}";
+            _spriteBatch.DrawString(_font, line2,
+                new Vector2(qx + 8, qy + 6 + _font.LineSpacing), Color.White);
+        }
+
         // Debug text
         if (DevFlags.DebugColliders)
         {
@@ -639,6 +750,9 @@ public sealed class GameScreen : Screen
                 new Vector2(8, 8), _network.IsConnected ? Color.LimeGreen : Color.OrangeRed);
             _spriteBatch.DrawString(_font, $"enemies: {_enemies.Count}", new Vector2(8, 24), Color.White);
         }
+
+        // Dialog box (on top of everything)
+        _dialog?.Draw(_spriteBatch, _font, _pixel, _viewportWidth, _viewportHeight);
 
         _spriteBatch.End();
     }
@@ -679,4 +793,12 @@ public sealed class GameScreen : Screen
 
     private static Color FlashColor(float timer) =>
         timer > 0f && (int)(timer / 0.1f) % 2 == 1 ? Color.Red : Color.White;
+
+    private void DrawBorderRect(SpriteBatch sb, Rectangle r, Color c, int t)
+    {
+        sb.Draw(_pixel, new Rectangle(r.X,          r.Y,          r.Width, t), c);
+        sb.Draw(_pixel, new Rectangle(r.X,          r.Bottom - t, r.Width, t), c);
+        sb.Draw(_pixel, new Rectangle(r.X,          r.Y,          t, r.Height), c);
+        sb.Draw(_pixel, new Rectangle(r.Right - t,  r.Y,          t, r.Height), c);
+    }
 }
