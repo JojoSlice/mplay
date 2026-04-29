@@ -42,8 +42,8 @@ public sealed class GameLogic
     internal const float PlayerSpawnX = 552.5f;
     internal const float PlayerSpawnY = 656.5f;
 
-    private const float EnemyMaxSpeed     = 70f;
-    private const float EnemyMinSpeed     = 10f;
+    private const float EnemyMaxSpeed     = 35f;
+    private const float EnemyMinSpeed     = 5f;
     private const float MapMinX           = 14f;
     private const float MapMaxX           = 786f;
     private const float MapMinY           = 14f;

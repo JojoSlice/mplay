@@ -14,7 +14,7 @@ public sealed class GameScreen : Screen
 {
     private const string ServerHost = "127.0.0.1";
     private const int    ServerPort = 9050;
-    private const float  Speed      = 200f;
+    private const float  Speed      = 100f;
 
     private readonly IAuthService    _auth;
     private readonly INetworkManager _network;
@@ -39,7 +39,7 @@ public sealed class GameScreen : Screen
     private Vector2 _dashDir      = new(0f, 1f);
     private Vector2 _lastMoveDir  = new(0f, 1f);
 
-    private const float DashSpeed          = 600f;
+    private const float DashSpeed          = 300f;
     private const float DashDuration       = 0.18f;
     private const float DashCooldown       = 0.7f;
     private const int   DashStaminaCost    = 30;
@@ -303,7 +303,7 @@ public sealed class GameScreen : Screen
 
         _network.PlayerStatsReceived += stats => { _localStats = stats; _staminaF = stats.Stamina; };
 
-        _network.AttackMissed     += () => _localAnimator.HoldAttackFrame(0.3f);
+        _network.AttackMissed     += () => _localAnimator.HoldAttackFrame(0.8f);
         _network.PlayerRespawned  += () => TransitionToMap(Zone.Hub);
     }
 
