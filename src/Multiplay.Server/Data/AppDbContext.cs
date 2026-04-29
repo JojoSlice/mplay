@@ -25,6 +25,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(u => u.SessionToken).HasMaxLength(64);
             e.Property(u => u.DisplayName).HasMaxLength(32);
             e.Property(u => u.CharacterType).HasMaxLength(32);
+            e.Property(u => u.WeaponType).HasMaxLength(32);
+            e.Property(u => u.SlimeQuestDone).IsRequired();
         });
     }
 }

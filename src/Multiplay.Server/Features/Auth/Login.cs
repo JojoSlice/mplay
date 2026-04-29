@@ -31,6 +31,7 @@ public static class Login
 
         return Results.Ok(new AuthResponse(
             user.Id, user.Username, token,
-            user.DisplayName, user.CharacterType));
+            user.DisplayName, user.CharacterType,
+            user.WeaponType, user.SlimeQuestDone));
     }
 }

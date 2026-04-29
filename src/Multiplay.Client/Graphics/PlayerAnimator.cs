@@ -67,7 +67,7 @@ public sealed class ZinkAnimator : CharacterAnimator
     }
 
     private static bool IsAttackAction(PlayerAction a) =>
-        a is PlayerAction.SwordAttack;
+        a is PlayerAction.SwordAttack or PlayerAction.BowAttack or PlayerAction.WandAttack;
 
     public override void SetAction(PlayerAction action)
     {

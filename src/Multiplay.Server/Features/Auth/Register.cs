@@ -37,6 +37,6 @@ public static class Register
 
         sessions.Set(token, new SessionInfo(user.Id, user.Username, null, null));
 
-        return Results.Ok(new AuthResponse(user.Id, user.Username, token, null, null));
+        return Results.Ok(new AuthResponse(user.Id, user.Username, token, null, null, null, false));
     }
 }

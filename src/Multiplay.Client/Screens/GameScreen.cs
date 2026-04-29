@@ -65,9 +65,13 @@ public sealed class GameScreen : Screen
     private AnimatedSprite _slimeJumpSprite    = null!;
     private AnimatedSprite _bunnyNpcSprite     = null!;
     private Texture2D      _bunnyPortrait      = null!;
+    private AnimatedSprite _oldManSprite       = null!;
+    private Texture2D      _oldManPortrait     = null!;
 
     // Bottom-right corner of the inn startPoint (hub.tmx: x=513,y=640,w=79,h=33)
-    private static readonly Vector2 BunnyNpcPos = new(582f, 658f);
+    private static readonly Vector2 BunnyNpcPos  = new(582f, 658f);
+    // In front of the shop (hub.tmx: shop interactable x=199,y=465,w=68,h=30)
+    private static readonly Vector2 OldManPos    = new(233f, 480f);
 
     private CharacterAnimator _localAnimator = null!;
     private KeyboardState     _prevKb;
@@ -85,15 +89,25 @@ public sealed class GameScreen : Screen
     private bool    EnemiesActive => _currentZone == Zone.Map1;
 
     // ── Dialog ───────────────────────────────────────────────────────────────────
-    private DialogBox? _dialog;
-    private bool       _dialogJustClosed;   // prevents HandleInteraction consuming the same key press
-    private const float BunnyTalkRadius = 50f;
+    private DialogBox?    _dialog;
+    private Action<int>?  _dialogChoiceCallback;  // invoked with selected index on confirm; null for message-only
+    private bool          _dialogJustClosed;       // prevents HandleInteraction consuming the same key press
+    private const float BunnyTalkRadius  = 50f;
+    private const float OldManTalkRadius = 50f;
+    private const float OldManRadius     = 7f;
 
     // ── Quest ────────────────────────────────────────────────────────────────────
     private enum QuestState { None, Active, ReadyToTurn }
     private QuestState _questState    = QuestState.None;
     private int        _questKillCount = 0;
     private const int  QuestKillTarget  = 10;
+
+    // ── Weapon ───────────────────────────────────────────────────────────────────
+    private enum WeaponType { Sword, Bow, Wand }
+    private WeaponType _weaponType         = WeaponType.Sword;
+    private bool       _oldManHasWeapon    = false;
+    private bool       _weaponNeedsReclaim = false;  // set after death when weapon was equipped
+    private bool       _slimeQuestDone     = false;  // mirrors _auth.SlimeQuestDone; set locally on reward
 
     private static readonly Dictionary<string, string> ZoneToMapFile = new()
     {
@@ -137,6 +151,9 @@ public sealed class GameScreen : Screen
         _localStats = DefaultStats.ForCharacter(_auth.CharacterType);
         _staminaF   = _localStats.Stamina;
 
+        _weaponType     = ParseWeapon(_auth.WeaponType);
+        _slimeQuestDone = _auth.SlimeQuestDone;
+
         _pixel = new Texture2D(gd, 1, 1);
         _pixel.SetData(new[] { Color.White });
 
@@ -153,6 +170,10 @@ public sealed class GameScreen : Screen
         _bunnyNpcSprite = new AnimatedSprite(
             content.Load<Texture2D>("Sprites/NPCs/sprBunnyGirlSearch"), 16, 24, fps: 4f);
         _bunnyPortrait = content.Load<Texture2D>("Dialog/bunnyGirl");
+
+        _oldManSprite   = new AnimatedSprite(
+            content.Load<Texture2D>("Sprites/NPCs/sprOldManS"), 16, 16, fps: 4f);
+        _oldManPortrait = content.Load<Texture2D>("Dialog/oldMan");
 
         var mapPath = Path.Combine(AppContext.BaseDirectory, "Content", "Maps", "hub.tmx");
         _map = new TileMapRenderer(mapPath);
@@ -178,7 +199,10 @@ public sealed class GameScreen : Screen
             _localPos = _map.StartPoint.Value;
     }
 
-    private void TransitionToMap(string zone)
+    // Centre of the hub gate zone (hub.tmx: gate x=369,y=144,w=79,h=33), just south of the arch
+    private static readonly Vector2 HubGateSpawn = new(408f, 185f);
+
+    private void TransitionToMap(string zone, Vector2? spawnPos = null)
     {
         if (!ZoneToMapFile.TryGetValue(zone, out var mapFile)) return;
         var path = Path.Combine(AppContext.BaseDirectory, "Content", "Maps", mapFile);
@@ -191,6 +215,8 @@ public sealed class GameScreen : Screen
         _enemyHealth.Clear();
         _enemyFlashTimers.Clear();
         ApplyMapData();
+        if (spawnPos.HasValue)
+            _localPos = spawnPos.Value;
         UpdateCamera();
     }
 
@@ -317,7 +343,8 @@ public sealed class GameScreen : Screen
 
         _network.PlayerStatsReceived += stats =>
         {
-            bool wasKill = stats.Xp > _localStats.Xp || stats.Level > _localStats.Level;
+            bool wasKill      = stats.Xp > _localStats.Xp || stats.Level > _localStats.Level;
+            bool reachedLevel1 = stats.Level >= 1 && _localStats.Level < 1;
             _localStats  = stats;
             _staminaF    = stats.Stamina;
             if (wasKill && _questState == QuestState.Active && _currentZone == Zone.Map1)
@@ -326,10 +353,26 @@ public sealed class GameScreen : Screen
                 if (_questKillCount >= QuestKillTarget)
                     _questState = QuestState.ReadyToTurn;
             }
+            if (reachedLevel1 && _weaponNeedsReclaim)
+            {
+                _weaponNeedsReclaim = false;
+                _oldManHasWeapon    = true;
+            }
         };
 
         _network.AttackMissed     += () => _localAnimator.HoldAttackFrame(0.8f);
-        _network.PlayerRespawned  += () => TransitionToMap(Zone.Hub);
+        _network.PlayerRespawned += () =>
+        {
+            _questState     = QuestState.None;
+            _questKillCount = 0;
+            if (_auth.WeaponType is not null)
+            {
+                _weaponType         = WeaponType.Sword; // disarmed until reclaim
+                _weaponNeedsReclaim = true;
+            }
+            TransitionToMap(Zone.Hub);
+            ShowBunnyMessage("..You're back.\nDead already? How embarrassing.");
+        };
     }
 
     // ── Update ───────────────────────────────────────────────────────────────────
@@ -349,6 +392,7 @@ public sealed class GameScreen : Screen
         _localAnimator.Update(dt);
         _slimeJumpSprite.Update(dt);
         _bunnyNpcSprite.Update(dt);
+        _oldManSprite.Update(dt);
 
         if (_localFlashTimer > 0f) _localFlashTimer = MathF.Max(0f, _localFlashTimer - dt);
 
@@ -398,7 +442,13 @@ public sealed class GameScreen : Screen
         var kb = Keyboard.GetState();
         if (!_localAnimator.IsAttacking && !_isDashing && kb.IsKeyDown(Keys.H))
         {
-            _localAnimator.SetAction(PlayerAction.SwordAttack);
+            var action = _weaponType switch
+            {
+                WeaponType.Bow  => PlayerAction.BowAttack,
+                WeaponType.Wand => PlayerAction.WandAttack,
+                _               => PlayerAction.SwordAttack,
+            };
+            _localAnimator.SetAction(action);
             var (dx, dy) = DirectionToVec(_localAnimator.CurrentDirection);
             _network.SendAttack(dx, dy);
         }
@@ -487,20 +537,30 @@ public sealed class GameScreen : Screen
             break;
         }
 
-        // BunnyGirl proximity (hub only)
-        if (_currentZone == Zone.Hub &&
-            Vector2.Distance(_localPos, BunnyNpcPos) <= BunnyTalkRadius)
+        // NPC proximity checks (hub only)
+        if (_currentZone == Zone.Hub)
         {
-            _activePrompt = "Talk [E]";
-            _activeNpc    = "bunnygirl";
+            if (Vector2.Distance(_localPos, BunnyNpcPos) <= BunnyTalkRadius)
+            {
+                _activePrompt = "Talk [E]";
+                _activeNpc    = "bunnygirl";
+            }
+            else if (Vector2.Distance(_localPos, OldManPos) <= OldManTalkRadius)
+            {
+                _activePrompt = "Talk [E]";
+                _activeNpc    = "oldman";
+            }
         }
 
         var kb = Keyboard.GetState();
         bool ePressed = kb.IsKeyDown(Keys.E) && !_prevKb.IsKeyDown(Keys.E);
         if (ePressed)
         {
-            if (_activeTargetZone is not null) TransitionToMap(_activeTargetZone);
-            else if (_activeNpc == "bunnygirl")   OpenBunnyDialog();
+            if (_activeTargetZone is not null)
+                TransitionToMap(_activeTargetZone,
+                    _activeTargetZone == Zone.Hub ? HubGateSpawn : null);
+            else if (_activeNpc == "bunnygirl") OpenBunnyDialog();
+            else if (_activeNpc == "oldman")    OpenOldManDialog();
         }
     }
 
@@ -515,16 +575,23 @@ public sealed class GameScreen : Screen
                     || (kb.IsKeyDown(Keys.Enter)  && !_prevKb.IsKeyDown(Keys.Enter));
         if (confirm)
         {
-            // Options.Length == 0 means a pure message — just dismiss, no choice callback
             int choice        = _dialog.Options.Length > 0 ? _dialog.SelectedIndex : -1;
+            var callback      = _dialogChoiceCallback;
             _dialog           = null;
+            _dialogChoiceCallback = null;
             _dialogJustClosed = true;
-            if (choice >= 0) OnBunnyChoice(choice);
+            if (choice >= 0) callback?.Invoke(choice);
         }
     }
 
     private void OpenBunnyDialog()
     {
+        if (_slimeQuestDone && _questState == QuestState.None)
+        {
+            ShowBunnyMessage("You've already proven yourself.\nDon't push your luck.");
+            return;
+        }
+
         string body = _questState switch
         {
             QuestState.None        => "Oh. Another wanderer.\nWhat do you want?",
@@ -538,6 +605,7 @@ public sealed class GameScreen : Screen
             QuestState.ReadyToTurn => ["Collect Reward", "Leave"],
             _                      => ["Leave"],
         };
+        _dialogChoiceCallback = OnBunnyChoice;
         _dialog = new DialogBox
         {
             SpeakerName = "BunnyGirl",
@@ -564,8 +632,11 @@ public sealed class GameScreen : Screen
                 ShowBunnyMessage("Not done yet. Bye.");
                 break;
             case QuestState.ReadyToTurn when choice == 0:  // Collect Reward
-                _questState = QuestState.None;
-                ShowBunnyMessage("Whatever. Here.\nDon't make it a habit.");
+                _questState      = QuestState.None;
+                _slimeQuestDone  = true;
+                _oldManHasWeapon = true;
+                _ = _auth.SavePlayerDataAsync(slimeQuestDone: true);
+                ShowBunnyMessage("Fine. Your reward.\nGo see the Old Man at the shop.\nHe'll have something for you.");
                 break;
             case QuestState.ReadyToTurn:                    // Leave
                 ShowBunnyMessage("You came all the way back\njust to leave? Pathetic. Bye.");
@@ -575,10 +646,120 @@ public sealed class GameScreen : Screen
 
     private void ShowBunnyMessage(string text)
     {
+        _dialogChoiceCallback = null;
         _dialog = new DialogBox
         {
             SpeakerName = "BunnyGirl",
             Portrait    = _bunnyPortrait,
+            BodyText    = text,
+            Options     = [],
+        };
+    }
+
+    // ── Old Man NPC ──────────────────────────────────────────────────────────────
+
+    private void OpenOldManDialog()
+    {
+        if (_oldManHasWeapon)
+        {
+            // Reclaim after death — weapon already chosen and stored in auth
+            if (_auth.WeaponType is not null)
+            {
+                _dialogChoiceCallback = OnOldManReclaimWeapon;
+                string name = WeaponDisplayName(ParseWeapon(_auth.WeaponType));
+                _dialog = new DialogBox
+                {
+                    SpeakerName = "Old Man",
+                    Portrait    = _oldManPortrait,
+                    BodyText    = $"Welcome back! I've kept your {name}\nsafe for you, young one.\nReady to take it back?",
+                    Options     = [$"Take {name}"],
+                };
+            }
+            else
+            {
+                // First time — choose weapon
+                _dialogChoiceCallback = OnOldManWeaponChoice;
+                _dialog = new DialogBox
+                {
+                    SpeakerName = "Old Man",
+                    Portrait    = _oldManPortrait,
+                    BodyText    = "Ah! So she finally sent you.\nEvery warrior needs a weapon.\nChoose wisely — this defines your path.",
+                    Options     = ["Sword", "Bow", "Wand"],
+                };
+            }
+            _dialog.Reset();
+            return;
+        }
+        _dialogChoiceCallback = OnOldManChoice;
+        _dialog = new DialogBox
+        {
+            SpeakerName = "Old Man",
+            Portrait    = _oldManPortrait,
+            BodyText    = "Ah, welcome, young adventurer!\nGood to see a new face around here.\nWhat can I do for you?",
+            Options     = ["Talk", "Shop", "Leave"],
+        };
+        _dialog.Reset();
+    }
+
+    private void OnOldManWeaponChoice(int choice)
+    {
+        _oldManHasWeapon = false;
+        _weaponType = choice switch
+        {
+            0 => WeaponType.Sword,
+            1 => WeaponType.Bow,
+            _ => WeaponType.Wand,
+        };
+        string name = WeaponDisplayName(_weaponType);
+        _ = _auth.SavePlayerDataAsync(weaponType: _weaponType.ToString());
+        ShowOldManMessage($"A fine choice! The {name} has served\nmany great warriors before you.\nMay it serve you well, young one.");
+    }
+
+    private void OnOldManReclaimWeapon(int _)
+    {
+        _oldManHasWeapon = false;
+        _weaponType      = ParseWeapon(_auth.WeaponType);
+        string name      = WeaponDisplayName(_weaponType);
+        ShowOldManMessage($"There you go! Your trusty {name}.\nMay it serve you well once more,\nyoung one.");
+    }
+
+    private static WeaponType ParseWeapon(string? s) => s switch
+    {
+        "Bow"  => WeaponType.Bow,
+        "Wand" => WeaponType.Wand,
+        _      => WeaponType.Sword,
+    };
+
+    private static string WeaponDisplayName(WeaponType w) => w switch
+    {
+        WeaponType.Bow  => "bow",
+        WeaponType.Wand => "wand",
+        _               => "sword",
+    };
+
+    private void OnOldManChoice(int choice)
+    {
+        switch (choice)
+        {
+            case 0: // Talk
+                ShowOldManMessage("Ha! You want to hear about the old days?\nI once held the eastern mountain pass\nalone for three days straight.\nThose were the days, young one.");
+                break;
+            case 1: // Shop
+                ShowOldManMessage("Ah, the shop. Ha! I'm afraid the old\ngoods aren't quite ready yet.\nCome back and see me soon.");
+                break;
+            default: // Leave
+                ShowOldManMessage("Safe travels, young one!\nKeep your guard up out there.\nThe world is not as kind as it looks.");
+                break;
+        }
+    }
+
+    private void ShowOldManMessage(string text)
+    {
+        _dialogChoiceCallback = null;
+        _dialog = new DialogBox
+        {
+            SpeakerName = "Old Man",
+            Portrait    = _oldManPortrait,
             BodyText    = text,
             Options     = [],
         };
@@ -602,11 +783,18 @@ public sealed class GameScreen : Screen
     {
         float pr = ColliderRadius.ForCharacter(_auth.CharacterType);
 
-        if (_currentZone == Zone.Hub &&
-            Collision.Overlaps(pos.X, pos.Y, pr, BunnyNpcPos.X, BunnyNpcPos.Y, BunnyNpcRadius))
+        if (_currentZone == Zone.Hub)
         {
-            var (sx, sy) = Collision.Resolve(pos.X, pos.Y, pr, BunnyNpcPos.X, BunnyNpcPos.Y, BunnyNpcRadius);
-            pos.X += sx; pos.Y += sy;
+            if (Collision.Overlaps(pos.X, pos.Y, pr, BunnyNpcPos.X, BunnyNpcPos.Y, BunnyNpcRadius))
+            {
+                var (sx, sy) = Collision.Resolve(pos.X, pos.Y, pr, BunnyNpcPos.X, BunnyNpcPos.Y, BunnyNpcRadius);
+                pos.X += sx; pos.Y += sy;
+            }
+            if (Collision.Overlaps(pos.X, pos.Y, pr, OldManPos.X, OldManPos.Y, OldManRadius))
+            {
+                var (sx, sy) = Collision.Resolve(pos.X, pos.Y, pr, OldManPos.X, OldManPos.Y, OldManRadius);
+                pos.X += sx; pos.Y += sy;
+            }
         }
 
         foreach (var e in _enemies.Values)
@@ -662,7 +850,10 @@ public sealed class GameScreen : Screen
 
         // NPCs (hub only)
         if (_currentZone == Zone.Hub)
+        {
             _bunnyNpcSprite.Draw(_spriteBatch, BunnyNpcPos - _camera, Color.White, scale: 1f);
+            _oldManSprite.Draw(_spriteBatch,   OldManPos   - _camera, Color.White, scale: 1f);
+        }
 
         // Remote players
         foreach (var (id, p) in _remotePlayers)

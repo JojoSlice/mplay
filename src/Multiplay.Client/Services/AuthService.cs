@@ -6,11 +6,13 @@ public sealed class AuthService : IAuthService
 {
     private readonly HttpClient _http;
 
-    public int?    UserId        { get; private set; }
-    public string? Username      { get; private set; }
-    public string? Token         { get; private set; }
-    public string? DisplayName   { get; private set; }
-    public string? CharacterType { get; private set; }
+    public int?    UserId         { get; private set; }
+    public string? Username       { get; private set; }
+    public string? Token          { get; private set; }
+    public string? DisplayName    { get; private set; }
+    public string? CharacterType  { get; private set; }
+    public string? WeaponType     { get; private set; }
+    public bool    SlimeQuestDone { get; private set; }
 
     public bool IsLoggedIn  => Token       is not null;
     public bool IsSetupDone => DisplayName is not null;
@@ -61,6 +63,24 @@ public sealed class AuthService : IAuthService
         catch (Exception ex) { return $"Connection error: {ex.Message}"; }
     }
 
+    public async Task<string?> SavePlayerDataAsync(string? weaponType = null, bool? slimeQuestDone = null)
+    {
+        try
+        {
+            var req = new HttpRequestMessage(HttpMethod.Patch, "auth/player-data")
+            {
+                Content = JsonContent.Create(new { weaponType, slimeQuestDone }),
+                Headers = { Authorization = new("Bearer", Token) },
+            };
+            var res = await _http.SendAsync(req);
+            if (!res.IsSuccessStatusCode) return await res.Content.ReadAsStringAsync();
+            if (weaponType     is not null) WeaponType     = weaponType;
+            if (slimeQuestDone is true)     SlimeQuestDone = true;
+            return null;
+        }
+        catch (Exception ex) { return $"Connection error: {ex.Message}"; }
+    }
+
     private void Apply(AuthResponse? r)
     {
         if (r is null) return;
@@ -69,11 +89,14 @@ public sealed class AuthService : IAuthService
         Token         = r.Token;
         DisplayName   = r.DisplayName;
         CharacterType = r.CharacterType;
+        WeaponType    = r.WeaponType;
+        SlimeQuestDone = r.SlimeQuestDone;
     }
 
     public void Dispose() => _http.Dispose();
 
     private sealed record AuthResponse(
         int UserId, string Username, string Token,
-        string? DisplayName, string? CharacterType);
+        string? DisplayName, string? CharacterType,
+        string? WeaponType, bool SlimeQuestDone);
 }

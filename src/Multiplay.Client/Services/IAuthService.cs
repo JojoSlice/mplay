@@ -7,6 +7,8 @@ public interface IAuthService : IDisposable
     string? Token         { get; }
     string? DisplayName   { get; }
     string? CharacterType { get; }
+    string? WeaponType    { get; }
+    bool    SlimeQuestDone { get; }
 
     bool IsLoggedIn  { get; }
     bool IsSetupDone { get; }
@@ -14,4 +16,5 @@ public interface IAuthService : IDisposable
     Task<string?> RegisterAsync(string username, string password);
     Task<string?> LoginAsync(string username, string password);
     Task<string?> SetupAsync(string displayName, string characterType);
+    Task<string?> SavePlayerDataAsync(string? weaponType = null, bool? slimeQuestDone = null);
 }

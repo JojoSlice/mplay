@@ -46,6 +46,7 @@ var auth = app.MapGroup("/auth");
 Register.Map(auth);
 Login.Map(auth);
 Setup.Map(auth);
+PlayerData.Map(auth);
 
 app.MapGet("/health", () => Results.Ok("ok"));
 
