@@ -17,7 +17,7 @@ public static class Login
         var user = await db.Users.FirstOrDefaultAsync(u => u.Username == req.Username);
 
         if (user is null || !BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash))
-            return Results.Text("Invalid username or password.", statusCode: 401);
+            return Results.Unauthorized();
 
         // Rotate token on every login
         if (user.SessionToken is not null)

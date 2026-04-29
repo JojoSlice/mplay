@@ -20,7 +20,7 @@ public static class Setup
         if (string.IsNullOrEmpty(token)
             || !sessions.TryGet(token, out var info)
             || info is null)
-            return Results.Text("Unauthorized.", statusCode: 401);
+            return Results.Unauthorized();
 
         var displayName = req.DisplayName.Trim();
         if (displayName.Length == 0 || displayName.Length > 32)
