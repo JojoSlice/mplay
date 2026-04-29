@@ -44,24 +44,22 @@ public sealed class NetworkManager : INetworkManager, INetEventListener
 
     public void PollEvents() => _net.PollEvents();
 
-    public void SendMove(float x, float y)
-    {
-        if (!IsConnected) return;
-        var w = new NetDataWriter();
-        w.Put((byte)PacketType.Move);
-        w.Put(x);
-        w.Put(y);
-        _server!.Send(w, DefaultChannel, DeliveryMethod.Unreliable);
-    }
+    public void SendMove(float x, float y) =>
+        SendPacket(PacketType.Move, w => { w.Put(x); w.Put(y); }, DeliveryMethod.Unreliable);
 
-    public void SendAttack(float dirX, float dirY)
+    public void SendAttack(float dirX, float dirY) =>
+        SendPacket(PacketType.Attack, w => { w.Put(dirX); w.Put(dirY); }, DeliveryMethod.ReliableOrdered);
+
+    public void SendZoneChanged(string zone) =>
+        SendPacket(PacketType.ZoneChanged, w => w.Put(zone), DeliveryMethod.ReliableOrdered);
+
+    private void SendPacket(PacketType type, Action<NetDataWriter> write, DeliveryMethod delivery)
     {
         if (!IsConnected) return;
         var w = new NetDataWriter();
-        w.Put((byte)PacketType.Attack);
-        w.Put(dirX);
-        w.Put(dirY);
-        _server!.Send(w, DefaultChannel, DeliveryMethod.ReliableOrdered);
+        w.Put((byte)type);
+        write(w);
+        _server!.Send(w, DefaultChannel, delivery);
     }
 
     // ── INetEventListener ──────────────────────────────────────────────────────

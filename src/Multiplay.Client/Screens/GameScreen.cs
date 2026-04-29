@@ -66,14 +66,20 @@ public sealed class GameScreen : Screen
     private List<(string Name, Rectangle Bounds)> _interactableZones = [];
 
     private string? _activePrompt;
-    private string? _activeTargetMap;
-    private string  _currentMapFile = "hub.tmx";
-    private bool    EnemiesActive   => _currentMapFile == "map1.tmx";
+    private string? _activeTargetZone;
+    private string  _currentZone  = Zone.Hub;
+    private bool    EnemiesActive => _currentZone == Zone.Map1;
 
-    private static readonly Dictionary<string, (string Prompt, string MapFile)> MapLinks = new()
+    private static readonly Dictionary<string, string> ZoneToMapFile = new()
     {
-        { "gate",    ("Leave camp [E]",     "map1.tmx") },
-        { "hubArea", ("Return to camp [E]", "hub.tmx")  },
+        { Zone.Hub,  "hub.tmx"  },
+        { Zone.Map1, "map1.tmx" },
+    };
+
+    private static readonly Dictionary<string, (string Prompt, string TargetZone)> MapLinks = new()
+    {
+        { "gate",    ("Leave camp [E]",     Zone.Map1) },
+        { "hubArea", ("Return to camp [E]", Zone.Hub)  },
     };
 
     private Vector2 _camera;
@@ -121,12 +127,9 @@ public sealed class GameScreen : Screen
             new float[] { 0.18f, 0.18f, 0.18f, 0.18f, 0.18f, 0.18f, 0.18f });
 
         var mapPath = Path.Combine(AppContext.BaseDirectory, "Content", "Maps", "hub.tmx");
-        if (File.Exists(mapPath))
-        {
-            _map = new TileMapRenderer(mapPath);
-            _map.LoadContent(content);
-            ApplyMapData();
-        }
+        _map = new TileMapRenderer(mapPath);
+        _map.LoadContent(content);
+        ApplyMapData();
 
         WireNetworkEvents(content);
         _network.Connect(ServerHost, ServerPort, _auth.Token!);
@@ -147,11 +150,12 @@ public sealed class GameScreen : Screen
             _localPos = _map.StartPoint.Value;
     }
 
-    private void TransitionToMap(string mapFile)
+    private void TransitionToMap(string zone)
     {
+        if (!ZoneToMapFile.TryGetValue(zone, out var mapFile)) return;
         var path = Path.Combine(AppContext.BaseDirectory, "Content", "Maps", mapFile);
-        if (!File.Exists(path)) return;
-        _currentMapFile = mapFile;
+        _currentZone = zone;
+        _network.SendZoneChanged(zone);
         _map = new TileMapRenderer(path);
         _map.LoadContent(_content);
         _enemies.Clear();
@@ -401,23 +405,23 @@ public sealed class GameScreen : Screen
 
     private void HandleInteraction()
     {
-        _activePrompt    = null;
-        _activeTargetMap = null;
+        _activePrompt      = null;
+        _activeTargetZone  = null;
 
         foreach (var (name, bounds) in _interactableZones)
         {
             if (!bounds.Contains((int)_localPos.X, (int)_localPos.Y)) continue;
             if (!MapLinks.TryGetValue(name, out var link)) continue;
-            _activePrompt    = link.Prompt;
-            _activeTargetMap = link.MapFile;
+            _activePrompt     = link.Prompt;
+            _activeTargetZone = link.TargetZone;
             break;
         }
 
-        if (_activeTargetMap is not null)
+        if (_activeTargetZone is not null)
         {
             var kb = Keyboard.GetState();
             if (kb.IsKeyDown(Keys.E) && !_prevKb.IsKeyDown(Keys.E))
-                TransitionToMap(_activeTargetMap);
+                TransitionToMap(_activeTargetZone);
         }
     }
 

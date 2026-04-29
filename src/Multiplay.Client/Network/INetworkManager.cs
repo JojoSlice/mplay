@@ -22,5 +22,6 @@ public interface INetworkManager : IDisposable
     void Connect(string host, int port, string token);
     void SendMove(float x, float y);
     void SendAttack(float dirX, float dirY);
+    void SendZoneChanged(string zone);
     void PollEvents();
 }

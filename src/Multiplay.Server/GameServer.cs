@@ -7,6 +7,7 @@ using Multiplay.Server.Infrastructure.Auth;
 using Multiplay.Server.Infrastructure.GameState;
 using Multiplay.Server.Infrastructure.Network;
 using Multiplay.Server.Models;
+using Multiplay.Server.Services;
 using Multiplay.Shared;
 
 namespace Multiplay.Server;
@@ -32,14 +33,16 @@ public sealed class GameServer : IHostedService, INetEventListener
         ISessionStore sessions,
         IServiceScopeFactory scopeFactory,
         IConfiguration config,
-        ILogger<GameServer> logger)
+        ILogger<GameServer> logger,
+        ICombatService combat,
+        IEnemyAI ai)
     {
         _sessions     = sessions;
         _scopeFactory = scopeFactory;
         _config       = config;
         _logger       = logger;
         _net          = new NetManager(this) { AutoRecycle = true };
-        _logic        = new GameLogic(state, new LiteNetBroadcaster(_net));
+        _logic        = new GameLogic(state, new LiteNetBroadcaster(_net), combat, ai);
     }
 
     // ── IHostedService ──────────────────────────────────────────────────────────
@@ -132,6 +135,9 @@ public sealed class GameServer : IHostedService, INetEventListener
                 break;
             case PacketType.Attack:
                 _logic.OnAttack(peer.Id, reader.GetFloat(), reader.GetFloat());
+                break;
+            case PacketType.ZoneChanged:
+                _logic.OnZoneChanged(peer.Id, reader.GetString());
                 break;
         }
     }

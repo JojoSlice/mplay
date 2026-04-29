@@ -1,5 +1,6 @@
 using LiteNetLib.Utils;
 using Multiplay.Server.Infrastructure.GameState;
+using Multiplay.Server.Services;
 using Multiplay.Server.Tests.Helpers;
 using Multiplay.Shared;
 
@@ -15,7 +16,7 @@ public class GameLogicTests
     {
         _state       = new InMemoryGameState();
         _broadcaster = new FakeBroadcaster();
-        _logic       = new GameLogic(_state, _broadcaster);
+        _logic       = new GameLogic(_state, _broadcaster, new CombatService(), new EnemyAI());
     }
 
     // ── OnPlayerConnected ──────────────────────────────────────────────────────

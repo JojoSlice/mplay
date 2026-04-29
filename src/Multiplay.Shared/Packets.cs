@@ -13,8 +13,16 @@ public enum PacketType : byte
     EnemyDamaged   = 7,
     PlayerStats    = 8,
     // Client → Server
-    Move   = 10,
-    Attack = 11,
+    Move        = 10,
+    Attack      = 11,
+    ZoneChanged = 12,  // player entered a different zone/map
+}
+
+/// <summary>Zone identifiers shared between client and server.</summary>
+public static class Zone
+{
+    public const string Hub  = "hub";
+    public const string Map1 = "map1";
 }
 
 /// <summary>Valid character type identifiers.</summary>

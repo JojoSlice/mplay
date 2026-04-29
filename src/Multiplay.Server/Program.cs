@@ -4,14 +4,17 @@ using Multiplay.Server.Data;
 using Multiplay.Server.Features.Auth;
 using Multiplay.Server.Infrastructure.Auth;
 using Multiplay.Server.Infrastructure.GameState;
+using Multiplay.Server.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<AppDbContext>(o =>
     o.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-builder.Services.AddSingleton<ISessionStore, InMemorySessionStore>();
-builder.Services.AddSingleton<IGameState,    InMemoryGameState>();
+builder.Services.AddSingleton<ISessionStore,  InMemorySessionStore>();
+builder.Services.AddSingleton<IGameState,     InMemoryGameState>();
+builder.Services.AddSingleton<ICombatService, CombatService>();
+builder.Services.AddSingleton<IEnemyAI,       EnemyAI>();
 builder.Services.AddHostedService<GameServer>();
 
 var app = builder.Build();
