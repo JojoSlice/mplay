@@ -198,6 +198,7 @@ public sealed class GameLogic
 
             var (nx, ny) = _combat.Knockback(cx, cy, e.Info.X, e.Info.Y,
                 EnemyKnockback, MapMinX, MapMaxX, MapMinY, MapMaxY);
+            (nx, ny) = Map1Colliders.Resolve(nx, ny, ColliderRadius.ForEnemy(e.Info.Type));
             _enemies[i].Info = e.Info with { X = nx, Y = ny };
 
             int dmg       = _combat.CalculateDamage(atkStats.Attack, e.Stats.Defence);
@@ -265,6 +266,12 @@ public sealed class GameLogic
                 ? _ai.ApplyWander(enemy, dt, MapMinX, MapMaxX, EnemyMinSpeed, EnemyMaxSpeed, HopCycle, WanderDirInterval)
                 : _ai.ApplyChase(enemy, nearestPlayer, dt, EnemyMaxSpeed, MapMinX, MapMaxX, MapMinY, MapMaxY);
 
+            // ── Map colliders ────────────────────────────────────────────────
+            (float mx, float my) = Map1Colliders.Resolve(enemy.Info.X, enemy.Info.Y,
+                ColliderRadius.ForEnemy(enemy.Info.Type));
+            if (mx != enemy.Info.X || my != enemy.Info.Y)
+                enemy.Info = enemy.Info with { X = mx, Y = my };
+
             float er = ColliderRadius.ForEnemy(enemy.Info.Type);
 
             // ── Player collisions (map1 only) ────────────────────────────────
@@ -280,6 +287,7 @@ public sealed class GameLogic
                     var (nx, ny) = _combat.Knockback(
                         enemy.Info.X, enemy.Info.Y, player.X, player.Y,
                         AttackPushback, MapMinX, MapMaxX, MapMinY, MapMaxY);
+                    (nx, ny) = Map1Colliders.Resolve(nx, ny, pr);
 
                     int newHealth = 0;
                     if (_playerStats.TryGetValue(player.Id, out var defStats))
