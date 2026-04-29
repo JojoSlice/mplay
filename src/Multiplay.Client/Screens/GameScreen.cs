@@ -353,7 +353,7 @@ public sealed class GameScreen : Screen
     private void HandleAttack()
     {
         var kb = Keyboard.GetState();
-        if (!_localAnimator.IsAttacking && !_isDashing && kb.IsKeyDown(Keys.Space))
+        if (!_localAnimator.IsAttacking && !_isDashing && kb.IsKeyDown(Keys.H))
         {
             _localAnimator.SetAction(PlayerAction.SwordAttack);
             var (dx, dy) = DirectionToVec(_localAnimator.CurrentDirection);
@@ -623,6 +623,19 @@ public sealed class GameScreen : Screen
         if (_localStats.MaxMagicPower > 0)
             DrawBar(_spriteBatch, new Vector2(10, 575), 80, 8,
                 (float)_localStats.MagicPower / _localStats.MaxMagicPower, Color.DodgerBlue, new Color(0, 0, 60));
+
+        // XP bar — full width at very bottom
+        {
+            int xpBarH    = 8;
+            int xpBarY    = _viewportHeight - xpBarH;
+            int xpNeeded  = XpSystem.XpForNextLevel(_localStats.Level);
+            float xpFill  = xpNeeded > 0 ? (float)_localStats.Xp / xpNeeded : 0f;
+            DrawBar(_spriteBatch, new Vector2(0, xpBarY), _viewportWidth, xpBarH,
+                xpFill, new Color(80, 120, 220), new Color(15, 20, 50));
+            string xpLabel = $"Lv {_localStats.Level}";
+            _spriteBatch.DrawString(_font, xpLabel,
+                new Vector2(4, xpBarY - _font.LineSpacing), Color.CornflowerBlue);
+        }
 
         // Interaction prompt (centered, above HUD)
         if (_activePrompt is not null)

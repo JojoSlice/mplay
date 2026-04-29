@@ -55,6 +55,7 @@ public sealed class GameLogic
     private const float AttackRadius      = 20f;
     private const float EnemyKnockback    = 80f;
     private const float EnemyRespawnTime  = 30f;
+    private const int   SlimeXp           = 10;
     private const float DetectionRadius   = 200f;
     private const float ChaseRadius       = 300f;
     private const float WanderDirInterval = 2f;
@@ -211,7 +212,16 @@ public sealed class GameLogic
             int newHealth  = Math.Max(0, e.Stats.Health - dmg);
             _enemies[i].Stats = e.Stats with { Health = newHealth };
             if (newHealth <= 0)
+            {
                 _enemies[i].RespawnTimer = EnemyRespawnTime;
+                var updated = XpSystem.AwardXp(atkStats, SlimeXp);
+                _playerStats[peerId] = updated;
+                atkStats = updated;
+                var sw = new NetDataWriter();
+                sw.Put((byte)PacketType.PlayerStats);
+                sw.WritePlayerStats(updated);
+                _broadcaster.SendTo(peerId, sw, DeliveryMethod.ReliableOrdered);
+            }
 
             var ew = new NetDataWriter();
             ew.Put((byte)PacketType.EnemyDamaged);

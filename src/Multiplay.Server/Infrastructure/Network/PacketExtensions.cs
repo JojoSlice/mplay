@@ -32,5 +32,7 @@ internal static class PacketExtensions
         w.Put(s.MaxStamina);
         w.Put(s.MagicPower);
         w.Put(s.MaxMagicPower);
+        w.Put(s.Level);
+        w.Put(s.Xp);
     }
 }

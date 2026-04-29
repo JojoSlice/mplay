@@ -13,5 +13,6 @@ internal static class PacketExtensions
 
     internal static PlayerStats ReadPlayerStats(this NetDataReader r) =>
         new(r.GetInt(), r.GetInt(), r.GetInt(), r.GetInt(),
-            r.GetInt(), r.GetInt(), r.GetInt(), r.GetInt());
+            r.GetInt(), r.GetInt(), r.GetInt(), r.GetInt(),
+            r.GetInt(), r.GetInt());
 }
