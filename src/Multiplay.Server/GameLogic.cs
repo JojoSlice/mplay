@@ -166,6 +166,9 @@ public sealed class GameLogic
             y += sepY;
         }
 
+        if (_map1Players.Contains(peerId))
+            (x, y) = Map1Colliders.Resolve(x, y, pr);
+
         if (!_state.TryMove(peerId, x, y)) return;
 
         var w = new NetDataWriter();
@@ -324,6 +327,7 @@ public sealed class GameLogic
                     var (sepX, sepY) = Collision.Resolve(player.X, player.Y, pr, enemy.Info.X, enemy.Info.Y, er);
                     float nx = player.X + sepX;
                     float ny = player.Y + sepY;
+                    (nx, ny) = Map1Colliders.Resolve(nx, ny, pr);
                     if (!_state.TryMove(player.Id, nx, ny)) continue;
                     var pw = new NetDataWriter();
                     pw.Put((byte)PacketType.PlayerMoved);
