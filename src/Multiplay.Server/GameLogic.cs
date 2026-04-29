@@ -142,9 +142,10 @@ public sealed class GameLogic
     public void OnMove(int peerId, float x, float y)
     {
         if (!_state.TryGet(peerId, out var self)) return;
-        float pr = ColliderRadius.ForCharacter(self.CharacterType);
+        float pr     = ColliderRadius.ForCharacter(self.CharacterType);
+        bool  isMap1 = _map1Players.Contains(peerId);
 
-        if (_map1Players.Contains(peerId))
+        if (isMap1)
         {
             foreach (var e in _enemies)
             {
@@ -167,7 +168,7 @@ public sealed class GameLogic
             y += sepY;
         }
 
-        if (_map1Players.Contains(peerId))
+        if (isMap1)
             (x, y) = Map1Colliders.Resolve(x, y, pr);
 
         if (!_state.TryMove(peerId, x, y)) return;

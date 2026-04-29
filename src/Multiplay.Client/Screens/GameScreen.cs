@@ -55,11 +55,12 @@ public sealed class GameScreen : Screen
     private const float FlashDuration = 0.4f;
 
     private PlayerStats _localStats;
+    private string      _xpLabel      = "Lv 0";
+    private int         _xpLabelLevel = 0;
     private readonly Dictionary<int, (int health, int maxHealth)> _remotePlayerHealth = [];
     private readonly Dictionary<int, (int health, int maxHealth)> _enemyHealth        = [];
     private Texture2D _pixel = null!;
 
-    private AnimatedSprite _slimeIdleSprite    = null!;
     private AnimatedSprite _slimeJumpSprite    = null!;
     private AnimatedSprite _bunnyNpcSprite     = null!;
 
@@ -131,8 +132,6 @@ public sealed class GameScreen : Screen
             DebugDraw.Initialize(gd);
 
         // Slime sprites — 16 × 16 px per frame
-        _slimeIdleSprite = new AnimatedSprite(
-            content.Load<Texture2D>("Sprites/Enemies/sprSlimeIdle"), 16, 16, 8f);
         _slimeJumpSprite = new AnimatedSprite(
             content.Load<Texture2D>("Sprites/Enemies/sprSlimeJump"), 16, 16,
             new float[] { 0.18f, 0.18f, 0.18f, 0.18f, 0.18f, 0.18f, 0.18f });
@@ -320,7 +319,6 @@ public sealed class GameScreen : Screen
 
         _localAnimator.Update(dt);
         _slimeJumpSprite.Update(dt);
-        _slimeIdleSprite.Update(dt);
         _bunnyNpcSprite.Update(dt);
 
         if (_localFlashTimer > 0f) _localFlashTimer = MathF.Max(0f, _localFlashTimer - dt);
@@ -331,14 +329,16 @@ public sealed class GameScreen : Screen
         else if (_staminaF < _localStats.MaxStamina)
         {
             _staminaF = MathF.Min(_localStats.MaxStamina, _staminaF + StaminaRegenRate * dt);
-            _localStats = _localStats with { Stamina = (int)_staminaF };
+            int s = (int)_staminaF;
+            if (s != _localStats.Stamina)
+                _localStats = _localStats with { Stamina = s };
         }
-        foreach (var id in _remoteFlashTimers.Keys.ToArray())
+        foreach (var id in _remoteFlashTimers.Keys)
             _remoteFlashTimers[id] = MathF.Max(0f, _remoteFlashTimers[id] - dt);
-        foreach (var id in _enemyFlashTimers.Keys.ToArray())
+        foreach (var id in _enemyFlashTimers.Keys)
             _enemyFlashTimers[id] = MathF.Max(0f, _enemyFlashTimers[id] - dt);
 
-        foreach (var id in _remoteIdleTimers.Keys.ToArray())
+        foreach (var id in _remoteIdleTimers.Keys)
         {
             _remoteIdleTimers[id] += dt;
             if (_remoteIdleTimers[id] >= IdleThreshold && _remoteAnimators.TryGetValue(id, out var a))
@@ -502,62 +502,13 @@ public sealed class GameScreen : Screen
             pos.X += sx; pos.Y += sy;
         }
         foreach (var rect in _mapColliders)
-            ResolveRectCollision(ref pos, pr, rect);
+            (pos.X, pos.Y) = Collision.ResolveRect(pos.X, pos.Y, pr, rect.Left, rect.Top, rect.Right, rect.Bottom);
         foreach (var poly in _mapPolyColliders)
-            ResolvePolygonCollision(ref pos, pr, poly);
-    }
-
-    private static void ResolveRectCollision(ref Vector2 pos, float radius, Rectangle rect)
-    {
-        float cx = Math.Clamp(pos.X, rect.Left, rect.Right);
-        float cy = Math.Clamp(pos.Y, rect.Top,  rect.Bottom);
-        float dx = pos.X - cx;
-        float dy = pos.Y - cy;
-        float distSq = dx * dx + dy * dy;
-
-        if (distSq >= radius * radius) return;
-
-        if (distSq < 0.0001f)
         {
-            float overlapL = pos.X - rect.Left   + radius;
-            float overlapR = rect.Right  - pos.X + radius;
-            float overlapT = pos.Y - rect.Top    + radius;
-            float overlapB = rect.Bottom - pos.Y + radius;
-            float min = Math.Min(Math.Min(overlapL, overlapR), Math.Min(overlapT, overlapB));
-            if      (min == overlapL) pos.X = rect.Left   - radius;
-            else if (min == overlapR) pos.X = rect.Right  + radius;
-            else if (min == overlapT) pos.Y = rect.Top    - radius;
-            else                      pos.Y = rect.Bottom + radius;
-            return;
+            var pts = new (float x, float y)[poly.Length];
+            for (int i = 0; i < poly.Length; i++) pts[i] = (poly[i].X, poly[i].Y);
+            (pos.X, pos.Y) = Collision.ResolvePoly(pos.X, pos.Y, pr, pts);
         }
-
-        float dist    = MathF.Sqrt(distSq);
-        float overlap = radius - dist;
-        pos.X += (dx / dist) * overlap;
-        pos.Y += (dy / dist) * overlap;
-    }
-
-    private static void ResolvePolygonCollision(ref Vector2 pos, float radius, Vector2[] polygon)
-    {
-        for (int i = 0; i < polygon.Length; i++)
-        {
-            var a       = polygon[i];
-            var b       = polygon[(i + 1) % polygon.Length];
-            var closest = ClosestPointOnSegment(a, b, pos);
-            var diff    = pos - closest;
-            float dist  = diff.Length();
-            if (dist < radius && dist > 0.0001f)
-                pos += diff / dist * (radius - dist);
-        }
-    }
-
-    private static Vector2 ClosestPointOnSegment(Vector2 a, Vector2 b, Vector2 p)
-    {
-        var ab = b - a;
-        float d = Vector2.Dot(ab, ab);
-        if (d < 0.0001f) return a;
-        float t = Math.Clamp(Vector2.Dot(p - a, ab) / d, 0f, 1f);
-        return a + t * ab;
     }
 
     // ── Draw ─────────────────────────────────────────────────────────────────────
@@ -663,8 +614,12 @@ public sealed class GameScreen : Screen
             float xpFill = xpNeeded > 0 ? (float)_localStats.Xp / xpNeeded : 0f;
             DrawBar(_spriteBatch, new Vector2(0, xpBarY), _viewportWidth, xpBarH,
                 xpFill, new Color(80, 120, 220), new Color(15, 20, 50));
-            string xpLabel = $"Lv {_localStats.Level}";
-            _spriteBatch.DrawString(_font, xpLabel,
+            if (_localStats.Level != _xpLabelLevel)
+            {
+                _xpLabelLevel = _localStats.Level;
+                _xpLabel      = $"Lv {_localStats.Level}";
+            }
+            _spriteBatch.DrawString(_font, _xpLabel,
                 new Vector2(4, xpBarY - _font.LineSpacing), Color.CornflowerBlue);
         }
 

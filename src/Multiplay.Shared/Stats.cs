@@ -16,6 +16,8 @@ public record struct EnemyStats(
 /// <summary>XP thresholds: XpForNextLevel(n) = (n+1)*100.</summary>
 public static class XpSystem
 {
+    private const int StatsPerLevel = 1;
+
     public static int XpForNextLevel(int level) => (level + 1) * 100;
 
     /// <summary>
@@ -33,11 +35,12 @@ public static class XpSystem
 
         while (newXp >= XpForNextLevel(newLevel))
         {
-            newXp -= XpForNextLevel(newLevel);
+            int threshold = XpForNextLevel(newLevel);
+            newXp     -= threshold;
             newLevel++;
-            maxHealth++;
-            maxStamina++;
-            maxMagic++;
+            maxHealth  += StatsPerLevel;
+            maxStamina += StatsPerLevel;
+            maxMagic   += StatsPerLevel;
         }
 
         bool leveledUp = newLevel > stats.Level;
