@@ -350,12 +350,16 @@ public sealed class GameScreen : Screen
         _prevKb = Keyboard.GetState();
     }
 
+    private const float CameraZoom = 2f;
+
     private void UpdateCamera()
     {
-        float x = _localPos.X - _viewportWidth  / 2f;
-        float y = _localPos.Y - _viewportHeight / 2f;
-        x = Math.Clamp(x, 0, Math.Max(0, _mapPixelWidth  - _viewportWidth));
-        y = Math.Clamp(y, 0, Math.Max(0, _mapPixelHeight - _viewportHeight));
+        float visW = _viewportWidth  / CameraZoom;
+        float visH = _viewportHeight / CameraZoom;
+        float x = _localPos.X - visW / 2f;
+        float y = _localPos.Y - visH / 2f;
+        x = Math.Clamp(x, 0, Math.Max(0, _mapPixelWidth  - visW));
+        y = Math.Clamp(y, 0, Math.Max(0, _mapPixelHeight - visH));
         _camera = new Vector2(x, y);
     }
 
@@ -469,9 +473,19 @@ public sealed class GameScreen : Screen
 
     // ── Collision ────────────────────────────────────────────────────────────────
 
+    private const float BunnyNpcRadius = 7f;
+
     private void ApplyCollision(ref Vector2 pos)
     {
         float pr = ColliderRadius.ForCharacter(_auth.CharacterType);
+
+        if (_currentZone == Zone.Hub &&
+            Collision.Overlaps(pos.X, pos.Y, pr, BunnyNpcPos.X, BunnyNpcPos.Y, BunnyNpcRadius))
+        {
+            var (sx, sy) = Collision.Resolve(pos.X, pos.Y, pr, BunnyNpcPos.X, BunnyNpcPos.Y, BunnyNpcRadius);
+            pos.X += sx; pos.Y += sy;
+        }
+
         foreach (var e in _enemies.Values)
         {
             if (_enemyHealth.TryGetValue(e.Id, out var eh) && eh.health <= 0) continue;
@@ -551,7 +565,10 @@ public sealed class GameScreen : Screen
     public override void Draw(SpriteBatch sb, GraphicsDevice gd)
     {
         gd.Clear(new Color(30, 30, 46));
-        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
+
+        // ── World pass (CameraZoom scale) ─────────────────────────────────────────
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp,
+            transformMatrix: Matrix.CreateScale(CameraZoom, CameraZoom, 1f));
 
         _map?.Draw(_spriteBatch, _camera);
 
@@ -563,7 +580,7 @@ public sealed class GameScreen : Screen
             var tint      = FlashColor(_enemyFlashTimers.GetValueOrDefault(id));
             var effects   = _enemyDirX.GetValueOrDefault(id, 1f) < 0f
                             ? SpriteEffects.FlipHorizontally : SpriteEffects.None;
-            _slimeJumpSprite.Draw(_spriteBatch, screenPos, tint, scale: 2f, effects: effects);
+            _slimeJumpSprite.Draw(_spriteBatch, screenPos, tint, scale: 1f, effects: effects);
             if (eh.maxHealth > 0)
                 DrawBar(_spriteBatch, screenPos + new Vector2(-15, -20), 30, 4,
                     (float)eh.health / eh.maxHealth, Color.MediumSeaGreen, new Color(0, 40, 0));
@@ -571,7 +588,7 @@ public sealed class GameScreen : Screen
 
         // NPCs (hub only)
         if (_currentZone == Zone.Hub)
-            _bunnyNpcSprite.Draw(_spriteBatch, BunnyNpcPos - _camera, Color.White, scale: 2f);
+            _bunnyNpcSprite.Draw(_spriteBatch, BunnyNpcPos - _camera, Color.White, scale: 1f);
 
         // Remote players
         foreach (var (id, p) in _remotePlayers)
@@ -579,16 +596,16 @@ public sealed class GameScreen : Screen
             {
                 var screenPos = new Vector2(p.X, p.Y) - _camera;
                 var tint = FlashColor(_remoteFlashTimers.GetValueOrDefault(id));
-                a.Draw(_spriteBatch, screenPos, tint, scale: 2f);
+                a.Draw(_spriteBatch, screenPos, tint, scale: 1f);
                 if (_remotePlayerHealth.TryGetValue(id, out var hp) && hp.maxHealth > 0)
                     DrawBar(_spriteBatch, screenPos + new Vector2(-15, -30), 30, 4,
                         (float)hp.health / hp.maxHealth, Color.MediumSeaGreen, new Color(0, 40, 0));
             }
 
         // Local player
-        _localAnimator.Draw(_spriteBatch, _localPos - _camera, FlashColor(_localFlashTimer), scale: 2f);
+        _localAnimator.Draw(_spriteBatch, _localPos - _camera, FlashColor(_localFlashTimer), scale: 1f);
 
-        // Debug overlays
+        // Debug collider overlays
         if (DevFlags.DebugColliders)
         {
             float lr = ColliderRadius.ForCharacter(_auth.CharacterType);
@@ -620,13 +637,14 @@ public sealed class GameScreen : Screen
                 var offsetPoly = poly.Select(v => v - _camera).ToArray();
                 DebugDraw.Polygon(_spriteBatch, offsetPoly, Color.OrangeRed);
             }
-
-            _spriteBatch.DrawString(_font, $"server: {(_network.IsConnected ? "connected" : "NOT connected")}",
-                new Vector2(8, 8), _network.IsConnected ? Color.LimeGreen : Color.OrangeRed);
-            _spriteBatch.DrawString(_font, $"enemies: {_enemies.Count}", new Vector2(8, 24), Color.White);
         }
 
-        // HUD — local player bars (bottom-left)
+        _spriteBatch.End();
+
+        // ── HUD pass (no zoom) ────────────────────────────────────────────────────
+        _spriteBatch.Begin(samplerState: SamplerState.PointClamp);
+
+        // Local player bars (bottom-left)
         if (_localStats.MaxHealth > 0)
             DrawBar(_spriteBatch, new Vector2(10, 550), 150, 12,
                 (float)_localStats.Health / _localStats.MaxHealth, Color.Crimson, new Color(60, 0, 0));
@@ -639,10 +657,10 @@ public sealed class GameScreen : Screen
 
         // XP bar — full width at very bottom
         {
-            int xpBarH    = 8;
-            int xpBarY    = _viewportHeight - xpBarH;
-            int xpNeeded  = XpSystem.XpForNextLevel(_localStats.Level);
-            float xpFill  = xpNeeded > 0 ? (float)_localStats.Xp / xpNeeded : 0f;
+            int xpBarH   = 8;
+            int xpBarY   = _viewportHeight - xpBarH;
+            int xpNeeded = XpSystem.XpForNextLevel(_localStats.Level);
+            float xpFill = xpNeeded > 0 ? (float)_localStats.Xp / xpNeeded : 0f;
             DrawBar(_spriteBatch, new Vector2(0, xpBarY), _viewportWidth, xpBarH,
                 xpFill, new Color(80, 120, 220), new Color(15, 20, 50));
             string xpLabel = $"Lv {_localStats.Level}";
@@ -650,13 +668,21 @@ public sealed class GameScreen : Screen
                 new Vector2(4, xpBarY - _font.LineSpacing), Color.CornflowerBlue);
         }
 
-        // Interaction prompt (centered, above HUD)
+        // Interaction prompt (centered)
         if (_activePrompt is not null)
         {
-            var measure    = _font.MeasureString(_activePrompt);
-            var promptPos  = new Vector2((_viewportWidth - measure.X) / 2f, _viewportHeight * 0.72f);
+            var measure   = _font.MeasureString(_activePrompt);
+            var promptPos = new Vector2((_viewportWidth - measure.X) / 2f, _viewportHeight * 0.72f);
             _spriteBatch.DrawString(_font, _activePrompt, promptPos + new Vector2(1, 1), Color.Black * 0.8f);
             _spriteBatch.DrawString(_font, _activePrompt, promptPos, Color.Yellow);
+        }
+
+        // Debug text
+        if (DevFlags.DebugColliders)
+        {
+            _spriteBatch.DrawString(_font, $"server: {(_network.IsConnected ? "connected" : "NOT connected")}",
+                new Vector2(8, 8), _network.IsConnected ? Color.LimeGreen : Color.OrangeRed);
+            _spriteBatch.DrawString(_font, $"enemies: {_enemies.Count}", new Vector2(8, 24), Color.White);
         }
 
         _spriteBatch.End();

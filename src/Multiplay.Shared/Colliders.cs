@@ -3,9 +3,14 @@ namespace Multiplay.Shared;
 /// <summary>Collision radii (world units) for each entity type.</summary>
 public static class ColliderRadius
 {
-    public static float ForCharacter(string? type) => 14f;
+    public static float ForCharacter(string? type) => type switch
+    {
+        CharacterType.ShieldKnight => 10f,  // 32×32 sprite
+        CharacterType.SwordKnight  => 10f,  // 32×32 sprite
+        _                          => 14f,  // Zink 48×48 sprite
+    };
 
-    public static float ForEnemy(string? type) => 14f;
+    public static float ForEnemy(string? type) => 6f;  // Slime 16×16 sprite
 }
 
 /// <summary>Circle-vs-circle overlap detection and minimum separation.</summary>
