@@ -59,8 +59,12 @@ public sealed class GameScreen : Screen
     private readonly Dictionary<int, (int health, int maxHealth)> _enemyHealth        = [];
     private Texture2D _pixel = null!;
 
-    private AnimatedSprite _slimeIdleSprite = null!;
-    private AnimatedSprite _slimeJumpSprite = null!;
+    private AnimatedSprite _slimeIdleSprite    = null!;
+    private AnimatedSprite _slimeJumpSprite    = null!;
+    private AnimatedSprite _bunnyNpcSprite     = null!;
+
+    // Bottom-right corner of the inn startPoint (hub.tmx: x=513,y=640,w=79,h=33)
+    private static readonly Vector2 BunnyNpcPos = new(582f, 658f);
 
     private CharacterAnimator _localAnimator = null!;
     private KeyboardState     _prevKb;
@@ -132,6 +136,9 @@ public sealed class GameScreen : Screen
         _slimeJumpSprite = new AnimatedSprite(
             content.Load<Texture2D>("Sprites/Enemies/sprSlimeJump"), 16, 16,
             new float[] { 0.18f, 0.18f, 0.18f, 0.18f, 0.18f, 0.18f, 0.18f });
+
+        _bunnyNpcSprite = new AnimatedSprite(
+            content.Load<Texture2D>("Sprites/NPCs/sprBunnyGirlSearch"), 16, 24, fps: 4f);
 
         var mapPath = Path.Combine(AppContext.BaseDirectory, "Content", "Maps", "hub.tmx");
         _map = new TileMapRenderer(mapPath);
@@ -296,7 +303,8 @@ public sealed class GameScreen : Screen
 
         _network.PlayerStatsReceived += stats => { _localStats = stats; _staminaF = stats.Stamina; };
 
-        _network.AttackMissed += () => _localAnimator.HoldAttackFrame(0.3f);
+        _network.AttackMissed     += () => _localAnimator.HoldAttackFrame(0.3f);
+        _network.PlayerRespawned  += () => TransitionToMap(Zone.Hub);
     }
 
     // ── Update ───────────────────────────────────────────────────────────────────
@@ -313,6 +321,7 @@ public sealed class GameScreen : Screen
         _localAnimator.Update(dt);
         _slimeJumpSprite.Update(dt);
         _slimeIdleSprite.Update(dt);
+        _bunnyNpcSprite.Update(dt);
 
         if (_localFlashTimer > 0f) _localFlashTimer = MathF.Max(0f, _localFlashTimer - dt);
 
@@ -559,6 +568,10 @@ public sealed class GameScreen : Screen
                 DrawBar(_spriteBatch, screenPos + new Vector2(-15, -20), 30, 4,
                     (float)eh.health / eh.maxHealth, Color.MediumSeaGreen, new Color(0, 40, 0));
         }
+
+        // NPCs (hub only)
+        if (_currentZone == Zone.Hub)
+            _bunnyNpcSprite.Draw(_spriteBatch, BunnyNpcPos - _camera, Color.White, scale: 2f);
 
         // Remote players
         foreach (var (id, p) in _remotePlayers)

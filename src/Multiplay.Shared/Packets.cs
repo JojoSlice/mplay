@@ -12,7 +12,8 @@ public enum PacketType : byte
     PlayerDamaged  = 6,
     EnemyDamaged   = 7,
     PlayerStats    = 8,
-    AttackMissed   = 9,
+    AttackMissed    = 9,
+    PlayerRespawned = 13,
     // Client → Server
     Move        = 10,
     Attack      = 11,

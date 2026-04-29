@@ -18,17 +18,40 @@ public static class XpSystem
 {
     public static int XpForNextLevel(int level) => (level + 1) * 100;
 
-    /// <summary>Add <paramref name="xp"/> to <paramref name="stats"/>, levelling up as needed.</summary>
+    /// <summary>
+    /// Add <paramref name="xp"/> to <paramref name="stats"/>, levelling up as needed.
+    /// Each level gained adds +1 to MaxHealth, MaxStamina, and MaxMagicPower,
+    /// and restores all three to their new maximums.
+    /// </summary>
     public static PlayerStats AwardXp(PlayerStats stats, int xp)
     {
-        int newXp    = stats.Xp + xp;
-        int newLevel = stats.Level;
+        int newXp      = stats.Xp + xp;
+        int newLevel   = stats.Level;
+        int maxHealth  = stats.MaxHealth;
+        int maxStamina = stats.MaxStamina;
+        int maxMagic   = stats.MaxMagicPower;
+
         while (newXp >= XpForNextLevel(newLevel))
         {
             newXp -= XpForNextLevel(newLevel);
             newLevel++;
+            maxHealth++;
+            maxStamina++;
+            maxMagic++;
         }
-        return stats with { Level = newLevel, Xp = newXp };
+
+        bool leveledUp = newLevel > stats.Level;
+        return stats with
+        {
+            Level         = newLevel,
+            Xp            = newXp,
+            MaxHealth     = maxHealth,
+            MaxStamina    = maxStamina,
+            MaxMagicPower = maxMagic,
+            Health        = leveledUp ? maxHealth  : stats.Health,
+            Stamina       = leveledUp ? maxStamina : stats.Stamina,
+            MagicPower    = leveledUp ? maxMagic   : stats.MagicPower,
+        };
     }
 }
 

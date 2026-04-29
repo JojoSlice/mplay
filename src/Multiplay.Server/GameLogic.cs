@@ -331,6 +331,30 @@ public sealed class GameLogic
                         pw.Put(newHealth);
                         _broadcaster.Broadcast(pw, DeliveryMethod.ReliableOrdered);
                     }
+
+                    if (newHealth <= 0)
+                    {
+                        _map1Players.Remove(player.Id);
+                        var resetStats = DefaultStats.ForCharacter(player.CharacterType);
+                        _playerStats[player.Id] = resetStats;
+                        _state.TryMove(player.Id, PlayerSpawnX, PlayerSpawnY);
+
+                        var rw = new NetDataWriter();
+                        rw.Put((byte)PacketType.PlayerRespawned);
+                        _broadcaster.SendTo(player.Id, rw, DeliveryMethod.ReliableOrdered);
+
+                        var sw = new NetDataWriter();
+                        sw.Put((byte)PacketType.PlayerStats);
+                        sw.WritePlayerStats(resetStats);
+                        _broadcaster.SendTo(player.Id, sw, DeliveryMethod.ReliableOrdered);
+
+                        var mw = new NetDataWriter();
+                        mw.Put((byte)PacketType.PlayerMoved);
+                        mw.Put(player.Id);
+                        mw.Put(PlayerSpawnX);
+                        mw.Put(PlayerSpawnY);
+                        _broadcaster.Broadcast(mw, DeliveryMethod.ReliableOrdered, except: player.Id);
+                    }
                 }
                 else if (!isAttacking)
                 {

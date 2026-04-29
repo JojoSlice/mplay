@@ -19,6 +19,7 @@ public interface INetworkManager : IDisposable
     event Action<int, float, float, int>? PlayerDamaged;     // (playerId, newX, newY, newHealth)
     event Action<PlayerStats>?            PlayerStatsReceived;
     event Action?                         AttackMissed;
+    event Action?                         PlayerRespawned;
 
     void Connect(string host, int port, string token);
     void SendMove(float x, float y);
