@@ -24,7 +24,7 @@ public class GameLogicTests
     [Fact]
     public void OnPlayerConnected_AddsPlayerToState()
     {
-        _logic.OnPlayerConnected(1, "Alice", CharacterType.Zink);
+        _logic.OnPlayerConnected(1, "Alice", CharacterType.Zink, 0, 0);
 
         Assert.Single(_state.All);
         var player = _state.All.First();
@@ -36,7 +36,7 @@ public class GameLogicTests
     [Fact]
     public void OnPlayerConnected_SendsWorldSnapshotToNewPlayer()
     {
-        _logic.OnPlayerConnected(1, "Alice", CharacterType.Zink);
+        _logic.OnPlayerConnected(1, "Alice", CharacterType.Zink, 0, 0);
 
         var snapshots = _broadcaster.OfType(PacketType.WorldSnapshot).ToList();
         Assert.Single(snapshots);
@@ -46,10 +46,10 @@ public class GameLogicTests
     [Fact]
     public void OnPlayerConnected_SecondPlayer_BroadcastsJoinToFirst()
     {
-        _logic.OnPlayerConnected(1, "Alice", CharacterType.Zink);
+        _logic.OnPlayerConnected(1, "Alice", CharacterType.Zink, 0, 0);
         _broadcaster.Clear();
 
-        _logic.OnPlayerConnected(2, "Bob", CharacterType.ShieldKnight);
+        _logic.OnPlayerConnected(2, "Bob", CharacterType.ShieldKnight, 0, 0);
 
         // Should broadcast PlayerJoined to everyone except peer 2
         var joins = _broadcaster.OfType(PacketType.PlayerJoined).ToList();
@@ -63,7 +63,7 @@ public class GameLogicTests
         // Even with one player the broadcast is emitted (reaches nobody in practice).
         // What matters is that the new player is excluded so they don't receive
         // their own join event.
-        _logic.OnPlayerConnected(1, "Alice", CharacterType.Zink);
+        _logic.OnPlayerConnected(1, "Alice", CharacterType.Zink, 0, 0);
 
         var joins = _broadcaster.OfType(PacketType.PlayerJoined).ToList();
         Assert.Single(joins);
@@ -75,7 +75,7 @@ public class GameLogicTests
     [Fact]
     public void OnPlayerDisconnected_RemovesFromState()
     {
-        _logic.OnPlayerConnected(1, "Alice", CharacterType.Zink);
+        _logic.OnPlayerConnected(1, "Alice", CharacterType.Zink, 0, 0);
         _logic.OnPlayerDisconnected(1);
         Assert.Empty(_state.All);
     }
@@ -83,16 +83,16 @@ public class GameLogicTests
     [Fact]
     public void OnPlayerDisconnected_ReturnsFinalState()
     {
-        _logic.OnPlayerConnected(1, "Alice", CharacterType.Zink);
-        var final = _logic.OnPlayerDisconnected(1);
+        _logic.OnPlayerConnected(1, "Alice", CharacterType.Zink, 0, 0);
+        var (final, _) = _logic.OnPlayerDisconnected(1);
         Assert.NotNull(final);
-        Assert.Equal("Alice", final.Value.Name);
+        Assert.Equal("Alice", final!.Value.Name);
     }
 
     [Fact]
     public void OnPlayerDisconnected_BroadcastsPlayerLeft()
     {
-        _logic.OnPlayerConnected(1, "Alice", CharacterType.Zink);
+        _logic.OnPlayerConnected(1, "Alice", CharacterType.Zink, 0, 0);
         _broadcaster.Clear();
         _logic.OnPlayerDisconnected(1);
 
@@ -102,8 +102,8 @@ public class GameLogicTests
     [Fact]
     public void OnPlayerDisconnected_UnknownPlayer_ReturnsNull()
     {
-        var result = _logic.OnPlayerDisconnected(99);
-        Assert.Null(result);
+        var (info, _) = _logic.OnPlayerDisconnected(99);
+        Assert.Null(info);
     }
 
     [Fact]
@@ -118,7 +118,7 @@ public class GameLogicTests
     [Fact]
     public void OnMove_UpdatesPositionInState()
     {
-        _logic.OnPlayerConnected(1, "Alice", CharacterType.Zink);
+        _logic.OnPlayerConnected(1, "Alice", CharacterType.Zink, 0, 0);
         _logic.OnMove(1, 150f, 250f);
 
         Assert.True(_state.TryGet(1, out var p));
@@ -129,7 +129,7 @@ public class GameLogicTests
     [Fact]
     public void OnMove_BroadcastsExceptMover()
     {
-        _logic.OnPlayerConnected(1, "Alice", CharacterType.Zink);
+        _logic.OnPlayerConnected(1, "Alice", CharacterType.Zink, 0, 0);
         _broadcaster.Clear();
         _logic.OnMove(1, 150f, 250f);
 

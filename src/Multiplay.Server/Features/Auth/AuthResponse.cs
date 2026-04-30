@@ -8,4 +8,6 @@ public record AuthResponse(
     string? DisplayName,
     string? CharacterType,
     string? WeaponType,
-    bool SlimeQuestDone);
+    bool SlimeQuestDone,
+    int Level,
+    int Xp);

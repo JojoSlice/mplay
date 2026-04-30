@@ -86,12 +86,12 @@ public sealed class GameLogic
 
     // ── Player lifecycle ───────────────────────────────────────────────────────
 
-    public void OnPlayerConnected(int peerId, string displayName, string characterType)
+    public void OnPlayerConnected(int peerId, string displayName, string characterType, int level, int xp)
     {
         var player = new PlayerInfo(peerId, displayName, PlayerSpawnX, PlayerSpawnY, characterType);
         _state.Add(player);
 
-        var stats = DefaultStats.ForCharacter(characterType);
+        var stats = DefaultStats.ForCharacterAtLevel(characterType, level, xp);
         _playerStats[peerId] = stats;
 
         var snap = new NetDataWriter();
@@ -122,19 +122,20 @@ public sealed class GameLogic
         else                   _map1Players.Remove(peerId);
     }
 
-    /// <returns>The player's final state, or null if the player was unknown.</returns>
-    public PlayerInfo? OnPlayerDisconnected(int peerId)
+    /// <returns>The player's final state and stats, or null info if the player was unknown.</returns>
+    public (PlayerInfo? info, PlayerStats stats) OnPlayerDisconnected(int peerId)
     {
+        var stats = _playerStats.TryGetValue(peerId, out var s) ? s : default;
         _playerStats.Remove(peerId);
         _map1Players.Remove(peerId);
-        if (!_state.Remove(peerId, out var final)) return null;
+        if (!_state.Remove(peerId, out var final)) return (null, stats);
 
         var left = new NetDataWriter();
         left.Put((byte)PacketType.PlayerLeft);
         left.Put(peerId);
         _broadcaster.Broadcast(left, DeliveryMethod.ReliableOrdered);
 
-        return final;
+        return (final, stats);
     }
 
     // ── Player input ───────────────────────────────────────────────────────────
@@ -336,7 +337,13 @@ public sealed class GameLogic
                     if (newHealth <= 0)
                     {
                         _map1Players.Remove(player.Id);
-                        var resetStats = DefaultStats.ForCharacter(player.CharacterType);
+                        // Keep level/XP — only restore current resources to their maximums
+                        var resetStats = defStats with
+                        {
+                            Health     = defStats.MaxHealth,
+                            Stamina    = defStats.MaxStamina,
+                            MagicPower = defStats.MaxMagicPower,
+                        };
                         _playerStats[player.Id] = resetStats;
                         _state.TryMove(player.Id, PlayerSpawnX, PlayerSpawnY);
 

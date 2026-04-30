@@ -101,16 +101,19 @@ public sealed class GameServer : IHostedService, INetEventListener
 
         var peer = request.Accept();
         peer.Tag = new PeerIdentity(
+            info.UserId,
             info.DisplayName ?? info.Username,
-            info.CharacterType ?? CharacterType.Zink);
+            info.CharacterType ?? CharacterType.Zink,
+            info.Level,
+            info.Xp);
     }
 
     public void OnPeerConnected(NetPeer peer)
     {
         var id = peer.Tag as PeerIdentity
-            ?? new PeerIdentity($"Player_{peer.Id}", CharacterType.Zink);
+            ?? new PeerIdentity(0, $"Player_{peer.Id}", CharacterType.Zink, 0, 0);
 
-        _logic.OnPlayerConnected(peer.Id, id.DisplayName, id.CharacterType);
+        _logic.OnPlayerConnected(peer.Id, id.DisplayName, id.CharacterType, id.Level, id.Xp);
         _logger.LogInformation("Player {Id} ({Name}) connected", peer.Id, id.DisplayName);
 
         _ = PersistConnectAsync(peer.Id, id.DisplayName);
@@ -118,10 +121,11 @@ public sealed class GameServer : IHostedService, INetEventListener
 
     public void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
     {
-        var final = _logic.OnPlayerDisconnected(peer.Id);
+        var id             = peer.Tag as PeerIdentity;
+        var (final, stats) = _logic.OnPlayerDisconnected(peer.Id);
         if (final is null) return;
         _logger.LogInformation("Player {Id} disconnected", peer.Id);
-        _ = PersistDisconnectAsync(peer.Id, final.Value);
+        _ = PersistDisconnectAsync(peer.Id, final.Value, id?.UserId ?? 0, stats);
     }
 
     public void OnNetworkReceive(
@@ -166,17 +170,31 @@ public sealed class GameServer : IHostedService, INetEventListener
         }
     }
 
-    private async Task PersistDisconnectAsync(int peerId, PlayerInfo final)
+    private async Task PersistDisconnectAsync(int peerId, PlayerInfo final, int userId, PlayerStats stats)
     {
         try
         {
             await using var scope = _scopeFactory.CreateAsyncScope();
             var db     = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var entity = await db.Players.FindAsync(peerId);
-            if (entity is null) return;
-            entity.X        = final.X;
-            entity.Y        = final.Y;
-            entity.LastSeen = DateTime.UtcNow;
+
+            var playerEntity = await db.Players.FindAsync(peerId);
+            if (playerEntity is not null)
+            {
+                playerEntity.X        = final.X;
+                playerEntity.Y        = final.Y;
+                playerEntity.LastSeen = DateTime.UtcNow;
+            }
+
+            if (userId > 0)
+            {
+                var userEntity = await db.Users.FindAsync(userId);
+                if (userEntity is not null)
+                {
+                    userEntity.Level = stats.Level;
+                    userEntity.Xp    = stats.Xp;
+                }
+            }
+
             await db.SaveChangesAsync();
         }
         catch (Exception ex)
@@ -198,5 +216,5 @@ public sealed class GameServer : IHostedService, INetEventListener
     public void OnNtpResponse(LiteNetLib.Utils.NtpPacket packet) { }
     public void OnPeerAddressChanged(NetPeer peer, IPEndPoint previousAddress) { }
 
-    private sealed record PeerIdentity(string DisplayName, string CharacterType);
+    private sealed record PeerIdentity(int UserId, string DisplayName, string CharacterType, int Level, int Xp);
 }

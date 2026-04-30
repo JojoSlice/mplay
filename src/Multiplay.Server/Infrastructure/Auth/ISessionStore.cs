@@ -4,7 +4,9 @@ public record SessionInfo(
     int UserId,
     string Username,
     string? DisplayName,
-    string? CharacterType);
+    string? CharacterType,
+    int Level,
+    int Xp);
 
 public interface ISessionStore
 {

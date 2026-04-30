@@ -39,6 +39,7 @@ public static class PlayerData
         return Results.Ok(new AuthResponse(
             user.Id, user.Username, token,
             user.DisplayName, user.CharacterType,
-            user.WeaponType, user.SlimeQuestDone));
+            user.WeaponType, user.SlimeQuestDone,
+            user.Level, user.Xp));
     }
 }

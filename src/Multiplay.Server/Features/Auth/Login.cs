@@ -27,11 +27,12 @@ public static class Login
         user.SessionToken = token;
         await db.SaveChangesAsync();
 
-        sessions.Set(token, new SessionInfo(user.Id, user.Username, user.DisplayName, user.CharacterType));
+        sessions.Set(token, new SessionInfo(user.Id, user.Username, user.DisplayName, user.CharacterType, user.Level, user.Xp));
 
         return Results.Ok(new AuthResponse(
             user.Id, user.Username, token,
             user.DisplayName, user.CharacterType,
-            user.WeaponType, user.SlimeQuestDone));
+            user.WeaponType, user.SlimeQuestDone,
+            user.Level, user.Xp));
     }
 }

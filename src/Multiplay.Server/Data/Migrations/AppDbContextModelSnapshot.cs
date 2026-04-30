@@ -79,6 +79,12 @@ namespace Multiplay.Server.Data.Migrations
                     b.Property<bool>("SlimeQuestDone")
                         .HasColumnType("boolean");
 
+                    b.Property<int>("Level")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Xp")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Username")
                         .IsRequired()
                         .HasMaxLength(32)

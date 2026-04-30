@@ -68,5 +68,25 @@ public static class DefaultStats
         _                          => new PlayerStats(100, 100, 10,  5, 100, 100, 50, 50, 0, 0), // Zink
     };
 
+    /// <summary>
+    /// Reconstructs full stats for a character at a saved level/xp.
+    /// Max stats are base + 1 per level; current HP/Stamina/MP start at their maximums.
+    /// </summary>
+    public static PlayerStats ForCharacterAtLevel(string? characterType, int level, int xp)
+    {
+        var s      = ForCharacter(characterType);
+        int maxHp  = s.MaxHealth     + level;
+        int maxSt  = s.MaxStamina    + level;
+        int maxMp  = s.MaxMagicPower + level;
+        return s with
+        {
+            Level         = level,
+            Xp            = xp,
+            MaxHealth     = maxHp,  Health     = maxHp,
+            MaxStamina    = maxSt,  Stamina    = maxSt,
+            MaxMagicPower = maxMp,  MagicPower = maxMp,
+        };
+    }
+
     public static EnemyStats ForEnemy(string? enemyType) => new EnemyStats(40, 40, 22, 2); // Slime — 22 atk kills Zink in 6 hits
 }

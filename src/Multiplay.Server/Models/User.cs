@@ -13,5 +13,7 @@ public class User
     public string? WeaponType    { get; set; }
     /// <summary>True after the player has collected the slime-kill quest reward once.</summary>
     public bool    SlimeQuestDone { get; set; }
+    public int     Level          { get; set; }
+    public int     Xp             { get; set; }
     public DateTime CreatedAt    { get; set; }
 }
