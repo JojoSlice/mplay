@@ -27,7 +27,7 @@ public static class Login
         user.SessionToken = token;
         await db.SaveChangesAsync();
 
-        sessions.Set(token, new SessionInfo(user.Id, user.Username, user.DisplayName, user.CharacterType, user.Level, user.Xp));
+        sessions.Set(token, new SessionInfo(user.Id, user.Username, user.DisplayName, user.CharacterType, user.Level, user.Xp, user.WeaponType));
 
         return Results.Ok(new AuthResponse(
             user.Id, user.Username, token,

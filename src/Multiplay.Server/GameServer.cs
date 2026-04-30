@@ -105,15 +105,16 @@ public sealed class GameServer : IHostedService, INetEventListener
             info.DisplayName ?? info.Username,
             info.CharacterType ?? CharacterType.Zink,
             info.Level,
-            info.Xp);
+            info.Xp,
+            info.WeaponType);
     }
 
     public void OnPeerConnected(NetPeer peer)
     {
         var id = peer.Tag as PeerIdentity
-            ?? new PeerIdentity(0, $"Player_{peer.Id}", CharacterType.Zink, 0, 0);
+            ?? new PeerIdentity(0, $"Player_{peer.Id}", CharacterType.Zink, 0, 0, null);
 
-        _logic.OnPlayerConnected(peer.Id, id.DisplayName, id.CharacterType, id.Level, id.Xp);
+        _logic.OnPlayerConnected(peer.Id, id.DisplayName, id.CharacterType, id.Level, id.Xp, id.WeaponType);
         _logger.LogInformation("Player {Id} ({Name}) connected", peer.Id, id.DisplayName);
 
         _ = PersistConnectAsync(peer.Id, id.DisplayName);
@@ -142,6 +143,9 @@ public sealed class GameServer : IHostedService, INetEventListener
                 break;
             case PacketType.ZoneChanged:
                 _logic.OnZoneChanged(peer.Id, reader.GetString());
+                break;
+            case PacketType.WeaponChanged:
+                _logic.OnWeaponChanged(peer.Id, reader.GetString());
                 break;
         }
     }
@@ -216,5 +220,5 @@ public sealed class GameServer : IHostedService, INetEventListener
     public void OnNtpResponse(LiteNetLib.Utils.NtpPacket packet) { }
     public void OnPeerAddressChanged(NetPeer peer, IPEndPoint previousAddress) { }
 
-    private sealed record PeerIdentity(int UserId, string DisplayName, string CharacterType, int Level, int Xp);
+    private sealed record PeerIdentity(int UserId, string DisplayName, string CharacterType, int Level, int Xp, string? WeaponType);
 }

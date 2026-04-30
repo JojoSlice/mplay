@@ -7,7 +7,7 @@ public static class ColliderRadius
     {
         CharacterType.ShieldKnight => 10f,  // 32×32 sprite
         CharacterType.SwordKnight  => 10f,  // 32×32 sprite
-        _                          => 14f,  // Zink 48×48 sprite
+        _                          => 7f,   // Zink 48×48 sprite
     };
 
     public static float ForEnemy(string? type) => 6f;  // Slime 16×16 sprite

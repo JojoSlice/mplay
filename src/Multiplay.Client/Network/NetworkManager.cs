@@ -55,6 +55,9 @@ public sealed class NetworkManager : INetworkManager, INetEventListener
     public void SendZoneChanged(string zone) =>
         SendPacket(PacketType.ZoneChanged, w => w.Put(zone), DeliveryMethod.ReliableOrdered);
 
+    public void SendWeaponChanged(string weaponType) =>
+        SendPacket(PacketType.WeaponChanged, w => w.Put(weaponType), DeliveryMethod.ReliableOrdered);
+
     private void SendPacket(PacketType type, Action<NetDataWriter> write, DeliveryMethod delivery)
     {
         if (!IsConnected) return;

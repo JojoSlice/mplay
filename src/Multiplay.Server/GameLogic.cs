@@ -51,8 +51,14 @@ public sealed class GameLogic
     private const float HopCycle          = 7 * 0.18f;
     private const float AttackPushback    = 80f;
     private const float HitCooldown       = 1.0f;
-    private const float AttackOffset      = 28f;
-    private const float AttackRadius      = 20f;
+    private const float AttackOffsetDefault = 6f;
+    private const float AttackOffsetSword   = 10f;
+
+    private float AttackOffsetFor(int peerId) =>
+        _playerWeapons.TryGetValue(peerId, out var w) && w == "Sword"
+            ? AttackOffsetSword
+            : AttackOffsetDefault;
+    private const float AttackRadius      = 12f;
     private const float EnemyKnockback    = 80f;
     private const float EnemyRespawnTime  = 30f;
     private const int   SlimeXp           = 10;
@@ -68,8 +74,9 @@ public sealed class GameLogic
     private readonly Enemy[] _enemies;
 
     private readonly Dictionary<(int enemyId, int playerId), float> _playerHitCooldowns = [];
-    private readonly Dictionary<int, PlayerStats>                   _playerStats = [];
-    private readonly HashSet<int>                                   _map1Players = [];
+    private readonly Dictionary<int, PlayerStats>                   _playerStats   = [];
+    private readonly Dictionary<int, string?>                       _playerWeapons = [];
+    private readonly HashSet<int>                                   _map1Players   = [];
 
     public GameLogic(IGameState state, IGameBroadcaster broadcaster,
                      ICombatService combat, IEnemyAI ai)
@@ -86,13 +93,14 @@ public sealed class GameLogic
 
     // ── Player lifecycle ───────────────────────────────────────────────────────
 
-    public void OnPlayerConnected(int peerId, string displayName, string characterType, int level, int xp)
+    public void OnPlayerConnected(int peerId, string displayName, string characterType, int level, int xp, string? weaponType)
     {
         var player = new PlayerInfo(peerId, displayName, PlayerSpawnX, PlayerSpawnY, characterType);
         _state.Add(player);
 
-        var stats = DefaultStats.ForCharacterAtLevel(characterType, level, xp);
-        _playerStats[peerId] = stats;
+        var stats = DefaultStats.ForClassAtLevel(weaponType, level, xp);
+        _playerStats[peerId]   = stats;
+        _playerWeapons[peerId] = weaponType;
 
         var snap = new NetDataWriter();
         snap.Put((byte)PacketType.WorldSnapshot);
@@ -116,6 +124,23 @@ public sealed class GameLogic
         _broadcaster.Broadcast(join, DeliveryMethod.ReliableOrdered, except: peerId);
     }
 
+    public void OnWeaponChanged(int peerId, string weaponType)
+    {
+        _playerWeapons[peerId] = weaponType;
+
+        // Rebuild stats for the new class, keeping current level/xp
+        if (_playerStats.TryGetValue(peerId, out var current))
+        {
+            var updated = DefaultStats.ForClassAtLevel(weaponType, current.Level, current.Xp);
+            _playerStats[peerId] = updated;
+
+            var sw = new NetDataWriter();
+            sw.Put((byte)PacketType.PlayerStats);
+            sw.WritePlayerStats(updated);
+            _broadcaster.SendTo(peerId, sw, DeliveryMethod.ReliableOrdered);
+        }
+    }
+
     public void OnZoneChanged(int peerId, string zone)
     {
         if (zone == Zone.Map1) _map1Players.Add(peerId);
@@ -127,6 +152,7 @@ public sealed class GameLogic
     {
         var stats = _playerStats.TryGetValue(peerId, out var s) ? s : default;
         _playerStats.Remove(peerId);
+        _playerWeapons.Remove(peerId);
         _map1Players.Remove(peerId);
         if (!_state.Remove(peerId, out var final)) return (null, stats);
 
@@ -192,8 +218,9 @@ public sealed class GameLogic
         if (len < 0.0001f) return;
         dirX /= len; dirY /= len;
 
-        float cx = attacker.X + dirX * AttackOffset;
-        float cy = attacker.Y + dirY * AttackOffset;
+        float offset = AttackOffsetFor(peerId);
+        float cx = attacker.X + dirX * offset;
+        float cy = attacker.Y + dirY * offset;
 
         bool hitAny = false;
         for (int i = 0; i < _enemies.Length; i++)

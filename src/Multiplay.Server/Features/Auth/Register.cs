@@ -35,7 +35,7 @@ public static class Register
         db.Users.Add(user);
         await db.SaveChangesAsync();
 
-        sessions.Set(token, new SessionInfo(user.Id, user.Username, null, null, 0, 0));
+        sessions.Set(token, new SessionInfo(user.Id, user.Username, null, null, 0, 0, null));
 
         return Results.Ok(new AuthResponse(user.Id, user.Username, token, null, null, null, false, 0, 0));
     }

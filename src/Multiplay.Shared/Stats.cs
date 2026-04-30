@@ -58,26 +58,31 @@ public static class XpSystem
     }
 }
 
-/// <summary>Base stats per character / enemy type.</summary>
+/// <summary>Base stats per class and enemy type.</summary>
 public static class DefaultStats
 {
-    public static PlayerStats ForCharacter(string? characterType) => characterType switch
+    /// <summary>
+    /// Returns base stats for a weapon class.
+    /// Null or unknown weapon type returns Beginner stats.
+    /// </summary>
+    public static PlayerStats ForClass(string? weaponType) => weaponType switch
     {
-        CharacterType.ShieldKnight => new PlayerStats(150, 150,  7, 15,  80,  80, 15, 15, 0, 0),
-        CharacterType.SwordKnight  => new PlayerStats( 90,  90, 15,  4,  90,  90, 10, 10, 0, 0),
-        _                          => new PlayerStats(100, 100, 10,  5, 100, 100, 50, 50, 0, 0), // Zink
+        "Sword" => new PlayerStats(120, 120, 14,  6,  80,  80, 10, 10, 0, 0),
+        "Bow"   => new PlayerStats( 90,  90, 10,  3, 120, 120, 20, 20, 0, 0),
+        "Wand"  => new PlayerStats( 70,  70,  6,  2,  80,  80, 80, 80, 0, 0),
+        _       => new PlayerStats( 80,  80,  8,  3,  80,  80, 10, 10, 0, 0), // Beginner
     };
 
     /// <summary>
-    /// Reconstructs full stats for a character at a saved level/xp.
+    /// Reconstructs full stats for a class at a saved level/xp.
     /// Max stats are base + 1 per level; current HP/Stamina/MP start at their maximums.
     /// </summary>
-    public static PlayerStats ForCharacterAtLevel(string? characterType, int level, int xp)
+    public static PlayerStats ForClassAtLevel(string? weaponType, int level, int xp)
     {
-        var s      = ForCharacter(characterType);
-        int maxHp  = s.MaxHealth     + level;
-        int maxSt  = s.MaxStamina    + level;
-        int maxMp  = s.MaxMagicPower + level;
+        var s     = ForClass(weaponType);
+        int maxHp = s.MaxHealth     + level;
+        int maxSt = s.MaxStamina    + level;
+        int maxMp = s.MaxMagicPower + level;
         return s with
         {
             Level         = level,

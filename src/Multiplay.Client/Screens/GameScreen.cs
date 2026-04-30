@@ -28,7 +28,11 @@ public sealed class GameScreen : Screen
     private readonly Dictionary<int, CharacterAnimator> _remoteAnimators  = [];
     private readonly Dictionary<int, float>             _remoteIdleTimers = [];
     private const float IdleThreshold = 0.15f;
-    private const float AttackOffset  = 28f; // must match server
+    private const float AttackOffsetDefault = 6f;  // must match server GameLogic
+    private const float AttackOffsetSword   = 10f; // must match server GameLogic
+    private const float AttackRadius        = 12f; // must match server GameLogic
+
+    private float AttackOffset => _weaponType is WeaponType.Sword ? AttackOffsetSword : AttackOffsetDefault;
     private Vector2 _localPos = new(400, 300);
 
     private readonly Dictionary<int, EnemyInfo> _enemies   = [];
@@ -100,10 +104,10 @@ public sealed class GameScreen : Screen
     private enum QuestState { None, Active, ReadyToTurn }
     private QuestState _questState    = QuestState.None;
     private int        _questKillCount = 0;
-    private const int  QuestKillTarget  = 10;
+    private const int  QuestKillTarget  = 3;
 
     // ── Weapon ───────────────────────────────────────────────────────────────────
-    private enum WeaponType { Sword, Bow, Wand }
+    private enum WeaponType { None, Sword, Bow, Wand }
     private WeaponType _weaponType         = WeaponType.Sword;
     private bool       _oldManHasWeapon    = false;
     private bool       _weaponNeedsReclaim = false;  // set after death when weapon was equipped
@@ -148,7 +152,7 @@ public sealed class GameScreen : Screen
         _localAnimator = CharacterAnimator.Create(
             _auth.CharacterType ?? Shared.CharacterType.Zink);
         _localAnimator.LoadContent(content);
-        _localStats = DefaultStats.ForCharacter(_auth.CharacterType);
+        _localStats = DefaultStats.ForClass(_auth.WeaponType);
         _staminaF   = _localStats.Stamina;
 
         _weaponType     = ParseWeapon(_auth.WeaponType);
@@ -236,7 +240,7 @@ public sealed class GameScreen : Screen
                 _remotePlayers[p.Id]    = p;
                 _remoteAnimators[p.Id]  = CreateAnimator(content, p.CharacterType);
                 _remoteIdleTimers[p.Id] = 0f;
-                var def = DefaultStats.ForCharacter(p.CharacterType);
+                var def = DefaultStats.ForClass(null); // weapon type unknown; updated on damage
                 _remotePlayerHealth[p.Id] = (def.Health, def.MaxHealth);
             }
         };
@@ -247,7 +251,7 @@ public sealed class GameScreen : Screen
             _remotePlayers[p.Id]    = p;
             _remoteAnimators[p.Id]  = CreateAnimator(content, p.CharacterType);
             _remoteIdleTimers[p.Id] = 0f;
-            var def = DefaultStats.ForCharacter(p.CharacterType);
+            var def = DefaultStats.ForClass(null); // weapon type unknown; updated on damage
             _remotePlayerHealth[p.Id] = (def.Health, def.MaxHealth);
         };
 
@@ -362,11 +366,9 @@ public sealed class GameScreen : Screen
         _network.AttackMissed     += () => _localAnimator.HoldAttackFrame(0.8f);
         _network.PlayerRespawned += () =>
         {
-            _questState     = QuestState.None;
-            _questKillCount = 0;
             if (_auth.WeaponType is not null)
             {
-                _weaponType         = WeaponType.Sword; // disarmed until reclaim
+                _weaponType         = WeaponType.None; // disarmed until reclaim
                 _weaponNeedsReclaim = true;
             }
             TransitionToMap(Zone.Hub);
@@ -443,9 +445,10 @@ public sealed class GameScreen : Screen
         {
             var action = _weaponType switch
             {
-                WeaponType.Bow  => PlayerAction.BowAttack,
-                WeaponType.Wand => PlayerAction.WandAttack,
-                _               => PlayerAction.SwordAttack,
+                WeaponType.Sword => PlayerAction.ClassicSwordAttack,
+                WeaponType.Bow   => PlayerAction.BowAttack,
+                WeaponType.Wand  => PlayerAction.WandAttack,
+                _                => PlayerAction.SwordAttack,
             };
             _localAnimator.SetAction(action);
             var (dx, dy) = DirectionToVec(_localAnimator.CurrentDirection);
@@ -591,18 +594,26 @@ public sealed class GameScreen : Screen
             return;
         }
 
+        // Auto-complete on turn-in: no reward here — direct to Old Man
+        if (_questState == QuestState.ReadyToTurn)
+        {
+            _questState     = QuestState.None;
+            _slimeQuestDone = true;
+            _ = _auth.SavePlayerDataAsync(slimeQuestDone: true);
+            ShowBunnyMessage("Hm. You actually did it.\nI'm mildly surprised.\nGo see the Old Man at the shop.\nHe'll have something for you.");
+            return;
+        }
+
         string body = _questState switch
         {
-            QuestState.None        => "Oh. Another wanderer.\nWhat do you want?",
-            QuestState.Active      => "Still here? You haven't proven yourself yet.\nGo kill the slimes.",
-            QuestState.ReadyToTurn => "Hm. You actually did it.\nI'm mildly surprised.",
-            _                      => "",
+            QuestState.None   => "Oh. Another wanderer.\nWhat do you want?",
+            QuestState.Active => "Still here? You haven't proven yourself yet.\nGo kill the slimes.",
+            _                 => "",
         };
         string[] options = _questState switch
         {
-            QuestState.None        => ["Talk", "Leave"],
-            QuestState.ReadyToTurn => ["Collect Reward", "Leave"],
-            _                      => ["Leave"],
+            QuestState.None => ["Talk", "Leave"],
+            _               => ["Leave"],
         };
         _dialogChoiceCallback = OnBunnyChoice;
         _dialog = new DialogBox
@@ -619,26 +630,16 @@ public sealed class GameScreen : Screen
     {
         switch (_questState)
         {
-            case QuestState.None when choice == 0:          // Talk
+            case QuestState.None when choice == 0:  // Talk
                 _questState     = QuestState.Active;
                 _questKillCount = 0;
-                ShowBunnyMessage("Ugh. Fine. There are slimes everywhere.\nKill 10 of them before you even\nthink about talking to me again.");
+                ShowBunnyMessage("Ugh. Fine. There are slimes everywhere.\nKill 3 of them before you even\nthink about talking to me again.");
                 break;
-            case QuestState.None:                           // Leave
+            case QuestState.None:                   // Leave
                 ShowBunnyMessage("Good. I didn't want to talk\nto you anyway. Bye.");
                 break;
-            case QuestState.Active:                         // Leave
+            case QuestState.Active:                 // Leave
                 ShowBunnyMessage("Not done yet. Bye.");
-                break;
-            case QuestState.ReadyToTurn when choice == 0:  // Collect Reward
-                _questState      = QuestState.None;
-                _slimeQuestDone  = true;
-                _oldManHasWeapon = true;
-                _ = _auth.SavePlayerDataAsync(slimeQuestDone: true);
-                ShowBunnyMessage("Fine. Your reward.\nGo see the Old Man at the shop.\nHe'll have something for you.");
-                break;
-            case QuestState.ReadyToTurn:                    // Leave
-                ShowBunnyMessage("You came all the way back\njust to leave? Pathetic. Bye.");
                 break;
         }
     }
@@ -659,36 +660,37 @@ public sealed class GameScreen : Screen
 
     private void OpenOldManDialog()
     {
-        if (_oldManHasWeapon)
+        // Reclaim after death — weapon already chosen and stored in auth
+        if (_oldManHasWeapon && _auth.WeaponType is not null)
         {
-            // Reclaim after death — weapon already chosen and stored in auth
-            if (_auth.WeaponType is not null)
+            _dialogChoiceCallback = OnOldManReclaimWeapon;
+            string name = WeaponDisplayName(ParseWeapon(_auth.WeaponType));
+            _dialog = new DialogBox
             {
-                _dialogChoiceCallback = OnOldManReclaimWeapon;
-                string name = WeaponDisplayName(ParseWeapon(_auth.WeaponType));
-                _dialog = new DialogBox
-                {
-                    SpeakerName = "Old Man",
-                    Portrait    = _oldManPortrait,
-                    BodyText    = $"Welcome back! I've kept your {name}\nsafe for you, young one.\nReady to take it back?",
-                    Options     = [$"Take {name}"],
-                };
-            }
-            else
-            {
-                // First time — choose weapon
-                _dialogChoiceCallback = OnOldManWeaponChoice;
-                _dialog = new DialogBox
-                {
-                    SpeakerName = "Old Man",
-                    Portrait    = _oldManPortrait,
-                    BodyText    = "Ah! So she finally sent you.\nEvery warrior needs a weapon.\nChoose wisely — this defines your path.",
-                    Options     = ["Sword", "Bow", "Wand"],
-                };
-            }
+                SpeakerName = "Old Man",
+                Portrait    = _oldManPortrait,
+                BodyText    = $"Welcome back! I've kept your {name}\nsafe for you, young one.\nReady to take it back?",
+                Options     = [$"Take {name}"],
+            };
             _dialog.Reset();
             return;
         }
+
+        // First-time weapon selection — unlocked after completing slime quest
+        if (_slimeQuestDone && _auth.WeaponType is null)
+        {
+            _dialogChoiceCallback = OnOldManWeaponChoice;
+            _dialog = new DialogBox
+            {
+                SpeakerName = "Old Man",
+                Portrait    = _oldManPortrait,
+                BodyText    = "Ah! So she finally sent you.\nEvery warrior needs a weapon.\nChoose wisely. This defines your path.",
+                Options     = ["Sword", "Bow", "Wand"],
+            };
+            _dialog.Reset();
+            return;
+        }
+
         _dialogChoiceCallback = OnOldManChoice;
         _dialog = new DialogBox
         {
@@ -711,6 +713,7 @@ public sealed class GameScreen : Screen
         };
         string name = WeaponDisplayName(_weaponType);
         _ = _auth.SavePlayerDataAsync(weaponType: _weaponType.ToString());
+        _network.SendWeaponChanged(_weaponType.ToString());
         ShowOldManMessage($"A fine choice! The {name} has served\nmany great warriors before you.\nMay it serve you well, young one.");
     }
 
@@ -719,14 +722,16 @@ public sealed class GameScreen : Screen
         _oldManHasWeapon = false;
         _weaponType      = ParseWeapon(_auth.WeaponType);
         string name      = WeaponDisplayName(_weaponType);
+        _network.SendWeaponChanged(_weaponType.ToString());
         ShowOldManMessage($"There you go! Your trusty {name}.\nMay it serve you well once more,\nyoung one.");
     }
 
     private static WeaponType ParseWeapon(string? s) => s switch
     {
-        "Bow"  => WeaponType.Bow,
-        "Wand" => WeaponType.Wand,
-        _      => WeaponType.Sword,
+        "Sword" => WeaponType.Sword,
+        "Bow"   => WeaponType.Bow,
+        "Wand"  => WeaponType.Wand,
+        _       => WeaponType.None,
     };
 
     private static string WeaponDisplayName(WeaponType w) => w switch
@@ -879,7 +884,7 @@ public sealed class GameScreen : Screen
             {
                 var (adx, ady) = DirectionToVec(_localAnimator.CurrentDirection);
                 var attackCenter = _localPos - _camera + new Vector2(adx, ady) * AttackOffset;
-                DebugDraw.Circle(_spriteBatch, attackCenter, 20f, Color.Orange);
+                DebugDraw.Circle(_spriteBatch, attackCenter, AttackRadius, Color.Orange);
             }
 
             foreach (var p in _remotePlayers.Values)
@@ -946,7 +951,9 @@ public sealed class GameScreen : Screen
         }
 
         // Quest HUD (right side)
-        if (_questState != QuestState.None)
+        bool showQuestHud = _questState != QuestState.None
+                         || (_slimeQuestDone && _auth.WeaponType is null);
+        if (showQuestHud)
         {
             const int qw = 200, qh = 52, qx_pad = 10, qy = 10;
             int qx = _viewportWidth - qw - qx_pad;
@@ -954,9 +961,11 @@ public sealed class GameScreen : Screen
             DrawBorderRect(_spriteBatch, new Rectangle(qx, qy, qw, qh), new Color(120, 120, 180), 2);
             _spriteBatch.DrawString(_font, "Quest: Slay Slimes",
                 new Vector2(qx + 8, qy + 6), new Color(220, 200, 100));
-            string line2 = _questState == QuestState.ReadyToTurn
-                ? "Return to BunnyGirl!"
-                : $"Slimes: {_questKillCount} / {QuestKillTarget}";
+            string line2 = (_slimeQuestDone && _auth.WeaponType is null)
+                ? "Visit the Old Man!"
+                : _questState == QuestState.ReadyToTurn
+                    ? "Return to BunnyGirl!"
+                    : $"Slimes: {_questKillCount} / {QuestKillTarget}";
             _spriteBatch.DrawString(_font, line2,
                 new Vector2(qx + 8, qy + 6 + _font.LineSpacing), Color.White);
         }

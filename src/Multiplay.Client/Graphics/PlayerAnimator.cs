@@ -34,8 +34,8 @@ public sealed class ZinkAnimator : CharacterAnimator
     public override void LoadContent(ContentManager content)
     {
         Load(content, PlayerAction.Walk,               "Walk",               fps: 8);
-        Load(content, PlayerAction.SwordAttack,        "SwordAttack",               fps: 12);
-        Load(content, PlayerAction.ClassicSwordAttack, "WeaponsClassicSwordAttack", fps: 12);
+        Load(content, PlayerAction.SwordAttack,        "ClassicSwordAttack",        fps: 12); // Beginner
+        Load(content, PlayerAction.ClassicSwordAttack, "WeaponsClassicSwordAttack", fps: 12); // Sword class
         Load(content, PlayerAction.BowAttack,          "BowAttack",          fps: 10);
         Load(content, PlayerAction.WandAttack,         "WandAttack",         fps: 10);
         Load(content, PlayerAction.Jump,               "Jump",               fps: 8);
@@ -67,7 +67,8 @@ public sealed class ZinkAnimator : CharacterAnimator
     }
 
     private static bool IsAttackAction(PlayerAction a) =>
-        a is PlayerAction.SwordAttack or PlayerAction.BowAttack or PlayerAction.WandAttack;
+        a is PlayerAction.SwordAttack or PlayerAction.ClassicSwordAttack
+          or PlayerAction.BowAttack   or PlayerAction.WandAttack;
 
     public override void SetAction(PlayerAction action)
     {

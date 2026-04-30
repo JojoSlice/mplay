@@ -6,7 +6,8 @@ public record SessionInfo(
     string? DisplayName,
     string? CharacterType,
     int Level,
-    int Xp);
+    int Xp,
+    string? WeaponType);
 
 public interface ISessionStore
 {

@@ -27,7 +27,7 @@ public sealed class AuthService : IAuthService
         try
         {
             var res = await _http.PostAsJsonAsync("auth/register", new { username, password });
-            if (!res.IsSuccessStatusCode) return await res.Content.ReadAsStringAsync();
+            if (!res.IsSuccessStatusCode) return await ErrorBody(res);
             Apply(await res.Content.ReadFromJsonAsync<AuthResponse>());
             return null;
         }
@@ -39,7 +39,7 @@ public sealed class AuthService : IAuthService
         try
         {
             var res = await _http.PostAsJsonAsync("auth/login", new { username, password });
-            if (!res.IsSuccessStatusCode) return await res.Content.ReadAsStringAsync();
+            if (!res.IsSuccessStatusCode) return await ErrorBody(res, "Incorrect username or password.");
             Apply(await res.Content.ReadFromJsonAsync<AuthResponse>());
             return null;
         }
@@ -56,7 +56,7 @@ public sealed class AuthService : IAuthService
                 Headers = { Authorization = new("Bearer", Token) },
             };
             var res = await _http.SendAsync(req);
-            if (!res.IsSuccessStatusCode) return await res.Content.ReadAsStringAsync();
+            if (!res.IsSuccessStatusCode) return await ErrorBody(res);
             Apply(await res.Content.ReadFromJsonAsync<AuthResponse>());
             return null;
         }
@@ -73,12 +73,24 @@ public sealed class AuthService : IAuthService
                 Headers = { Authorization = new("Bearer", Token) },
             };
             var res = await _http.SendAsync(req);
-            if (!res.IsSuccessStatusCode) return await res.Content.ReadAsStringAsync();
+            if (!res.IsSuccessStatusCode) return await ErrorBody(res);
             if (weaponType     is not null) WeaponType     = weaponType;
             if (slimeQuestDone is true)     SlimeQuestDone = true;
             return null;
         }
         catch (Exception ex) { return $"Connection error: {ex.Message}"; }
+    }
+
+    /// <summary>
+    /// Reads the response body as an error message, falling back to a default
+    /// when the body is empty (e.g. plain 401 Unauthorized).
+    /// </summary>
+    private static async Task<string> ErrorBody(
+        HttpResponseMessage res,
+        string fallback = "An error occurred. Please try again.")
+    {
+        var body = await res.Content.ReadAsStringAsync();
+        return !string.IsNullOrWhiteSpace(body) ? body : fallback;
     }
 
     private void Apply(AuthResponse? r)

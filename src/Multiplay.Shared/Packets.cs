@@ -15,9 +15,10 @@ public enum PacketType : byte
     AttackMissed    = 9,
     PlayerRespawned = 13,
     // Client → Server
-    Move        = 10,
-    Attack      = 11,
-    ZoneChanged = 12,  // player entered a different zone/map
+    Move          = 10,
+    Attack        = 11,
+    ZoneChanged   = 12,  // player entered a different zone/map
+    WeaponChanged = 14,  // player equipped a different weapon
 }
 
 /// <summary>Zone identifiers shared between client and server.</summary>

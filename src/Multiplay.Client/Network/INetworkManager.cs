@@ -25,5 +25,6 @@ public interface INetworkManager : IDisposable
     void SendMove(float x, float y);
     void SendAttack(float dirX, float dirY);
     void SendZoneChanged(string zone);
+    void SendWeaponChanged(string weaponType);
     void PollEvents();
 }
