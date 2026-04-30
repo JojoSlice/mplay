@@ -12,7 +12,7 @@ public static class Setup
     public static void Map(IEndpointRouteBuilder app) =>
         app.MapPost("setup",
             (Request req, HttpContext http, AppDbContext db, ISessionStore sessions) =>
-                Handle(req, ExtractBearerToken(http), db, sessions));
+                Handle(req, AuthHelpers.ExtractBearerToken(http), db, sessions));
 
     internal static async Task<IResult> Handle(
         Request req, string? token, AppDbContext db, ISessionStore sessions)
@@ -43,10 +43,4 @@ public static class Setup
             user.DisplayName, user.CharacterType,
             user.WeaponType, user.SlimeQuestDone));
     }
-
-    private static string? ExtractBearerToken(HttpContext http) =>
-        http.Request.Headers.Authorization
-            .FirstOrDefault()
-            ?.Split(' ', 2)
-            .LastOrDefault();
 }

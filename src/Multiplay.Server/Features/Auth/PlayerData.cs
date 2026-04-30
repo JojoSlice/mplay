@@ -12,7 +12,9 @@ public static class PlayerData
     public static void Map(IEndpointRouteBuilder app) =>
         app.MapPatch("player-data",
             (Request req, HttpContext http, AppDbContext db, ISessionStore sessions) =>
-                Handle(req, ExtractBearerToken(http), db, sessions));
+                Handle(req, AuthHelpers.ExtractBearerToken(http), db, sessions));
+
+    private static readonly string[] ValidWeapons = ["Sword", "Bow", "Wand"];
 
     internal static async Task<IResult> Handle(
         Request req, string? token, AppDbContext db, ISessionStore sessions)
@@ -20,7 +22,10 @@ public static class PlayerData
         if (string.IsNullOrEmpty(token) || !sessions.TryGet(token, out var info) || info is null)
             return Results.Unauthorized();
 
-        var user = await db.Users.FirstOrDefaultAsync(u => u.SessionToken == token);
+        if (req.WeaponType is not null && !ValidWeapons.Contains(req.WeaponType))
+            return Results.BadRequest($"Invalid weapon type '{req.WeaponType}'.");
+
+        var user = await db.Users.FindAsync(info!.UserId);
         if (user is null) return Results.Unauthorized();
 
         if (req.WeaponType is not null)
@@ -36,10 +41,4 @@ public static class PlayerData
             user.DisplayName, user.CharacterType,
             user.WeaponType, user.SlimeQuestDone));
     }
-
-    private static string? ExtractBearerToken(HttpContext http) =>
-        http.Request.Headers.Authorization
-            .FirstOrDefault()
-            ?.Split(' ', 2)
-            .LastOrDefault();
 }

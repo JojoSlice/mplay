@@ -343,8 +343,12 @@ public sealed class GameScreen : Screen
 
         _network.PlayerStatsReceived += stats =>
         {
-            bool wasKill      = stats.Xp > _localStats.Xp || stats.Level > _localStats.Level;
-            bool reachedLevel1 = stats.Level >= 1 && _localStats.Level < 1;
+            bool wasKill = stats.Xp > _localStats.Xp || stats.Level > _localStats.Level;
+            if (_weaponNeedsReclaim && stats.Level >= 1 && _localStats.Level < 1)
+            {
+                _weaponNeedsReclaim = false;
+                _oldManHasWeapon    = true;
+            }
             _localStats  = stats;
             _staminaF    = stats.Stamina;
             if (wasKill && _questState == QuestState.Active && _currentZone == Zone.Map1)
@@ -352,11 +356,6 @@ public sealed class GameScreen : Screen
                 _questKillCount++;
                 if (_questKillCount >= QuestKillTarget)
                     _questState = QuestState.ReadyToTurn;
-            }
-            if (reachedLevel1 && _weaponNeedsReclaim)
-            {
-                _weaponNeedsReclaim = false;
-                _oldManHasWeapon    = true;
             }
         };
 
